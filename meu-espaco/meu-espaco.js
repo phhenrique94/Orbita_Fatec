@@ -9,8 +9,8 @@ import { secureAction, sanitizeHTML, escapeHTML as esc } from "../core/security.
 const fbApp = initializeApp(firebaseConfig);
 const auth  = getAuth(fbApp);
 
-const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') 
-  ? 'http://localhost:3000/api' 
+const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
+  ? `http://${window.location.hostname}:3000/api` 
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
@@ -359,7 +359,7 @@ function renderNotices(activeNotices, noticesList, canManage) {
         <div class="notice-title">${esc(notice.title)}</div>
         <div class="notice-message">${esc(notice.message)}</div>
         <div class="notice-meta">
-          <span>${notice.createdAt ? new Date(notice.createdAt.toDate()).toLocaleDateString('pt-BR') : 'Agora'}</span>
+          <span>${notice.createdAt ? new Date(notice.createdAt._seconds ? notice.createdAt._seconds * 1000 : notice.createdAt).toLocaleDateString('pt-BR') : 'Agora'}</span>
           ${canManage ? `
             <div class="notice-admin-actions">
               <button class="btn-edit-notice" title="Editar">Editar</button>

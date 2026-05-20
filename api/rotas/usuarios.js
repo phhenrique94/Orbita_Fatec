@@ -47,6 +47,7 @@ router.post('/', verifyToken, async (req, res) => {
             name: nome,
             email,
             role,
+            ativo: true,
             createdAt: new Date().toISOString(),
             createdBy: req.user.uid // req.user vem do verifyToken
         };
@@ -64,6 +65,17 @@ router.put('/:uid/role', verifyToken, async (req, res) => {
         const { role } = req.body;
         await db.collection('users').doc(req.params.uid).update({ role });
         res.json({ message: 'Nível atualizado com sucesso!' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/usuarios/:uid/status
+router.put('/:uid/status', verifyToken, async (req, res) => {
+    try {
+        const { ativo } = req.body;
+        await db.collection('users').doc(req.params.uid).update({ ativo });
+        res.json({ message: `Status atualizado com sucesso!` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

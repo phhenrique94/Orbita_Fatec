@@ -11,8 +11,8 @@ import { escapeHTML as esc } from "../../core/security.js";
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') 
-  ? 'http://localhost:3000/api' 
+const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
+  ? `http://${window.location.hostname}:3000/api` 
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
@@ -106,8 +106,6 @@ let eventoState     = {};       // { [funcId]: { docId, status, entrada } }
 let currentEventId  = null;     // ID do evento sendo visualizado
 let currentEventData = null;    // Objeto com dados do evento (datas, etc)
 let histFuncAtual   = null;     // funcionário selecionado no histórico
-let editingFuncId   = null;     // ID ao editar funcionário
-
 
 const TURNO_LABEL = { manha:'Manhã', tarde:'Tarde', noite:'Noite', integral:'Integral' };
 
@@ -149,7 +147,6 @@ onAuthStateChanged(auth, async user => {
 // ================================================================
 function inicializar() {
   setupTabs();
-  setupModalFuncionario();
   carregarFuncionarios();
   setupModoLancar();
   setupFormManual();
@@ -182,240 +179,9 @@ function carregarFuncionarios() {
   const colRef = collection(db, 'funcionarios_rh');
   onSnapshot(query(colRef, orderBy('nome')), snap => {
     allFuncionarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderFuncionarios(allFuncionarios);
     popularDatalistManual();
     popularSelectHistorico();
   });
-
-  document.getElementById('search-func').addEventListener('input', e => {
-    const q = e.target.value.toLowerCase();
-    renderFuncionarios(allFuncionarios.filter(f => f.nome.toLowerCase().includes(q)));
-  });
-}
-
-function renderFuncionarios(lista) {
-  const el = document.getElementById('lista-funcionarios');
-  document.getElementById('func-count').textContent = `${allFuncionarios.length} cadastrado${allFuncionarios.length !== 1 ? 's' : ''}`;
-
-  if (!lista.length) {
-    el.innerHTML = `<div class="ch-empty"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.25"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>Nenhum funcionário encontrado.</p></div>`;
-    return;
-  }
-
-  el.innerHTML = lista.map(f => {
-    // Monta badges dos turnos (novo formato array ou legado string)
-    const turnosBadges = (f.turnos && f.turnos.length)
-      ? f.turnos.map(t =>
-          `<span class="func-badge func-badge-turno">${TURNO_LABEL[t.id]||t.id} ${t.entrada}–${t.saida} (${fmtHoras(t.horas)})</span>`
-        ).join('')
-      : `<span class="func-badge func-badge-turno">${TURNO_LABEL[f.turno]||f.turno} · ${fmtHoras(f.horasTurno||0)}</span>`;
-
-    return `
-    <div class="func-card">
-      <div class="func-avatar">${esc(f.nome.charAt(0).toUpperCase())}</div>
-      <div class="func-info">
-        <div class="func-nome">${esc(f.nome)}</div>
-        <div class="func-meta">
-          <span class="func-badge func-badge-cargo">${esc(f.cargo)}</span>
-          ${turnosBadges}
-        </div>
-      </div>
-      <div class="func-horas-extras">
-        <span class="func-horas-valor">${fmtHoras(f.totalHorasExtras || 0)}</span>
-        <span class="func-horas-label">extras</span>
-      </div>
-      <div class="func-actions">
-        <button class="icon-btn edit-btn" data-id="${f.id}" title="Editar">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
-        <button class="icon-btn delete-btn" data-id="${f.id}" data-nome="${esc(f.nome)}" title="Excluir">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </button>
-      </div>
-    </div>`;
-  }).join('');
-
-  el.querySelectorAll('.edit-btn').forEach(btn =>
-    btn.addEventListener('click', () => abrirModalEditar(btn.dataset.id)));
-  el.querySelectorAll('.delete-btn').forEach(btn =>
-    btn.addEventListener('click', () => excluirFuncionario(btn.dataset.id, btn.dataset.nome)));
-}
-
-// ================================================================
-//  MODAL FUNCIONÁRIO (criar / editar)
-// ================================================================
-// Calcula diferença em horas entre dois horários "HH:MM"
-function calcHorasTurno(entrada, saida) {
-  if (!entrada || !saida) return 0;
-  const [eh, em] = entrada.split(':').map(Number);
-  const [sh, sm] = saida.split(':').map(Number);
-  let diff = (sh * 60 + sm) - (eh * 60 + em);
-  if (diff <= 0) diff += 24 * 60; // turno que atravessa meia-noite
-  return Math.round(diff / 60 * 100) / 100;
-}
-
-function atualizarTotalTurnos() {
-  let total = 0;
-  ['manha','tarde','noite'].forEach(t => {
-    if (document.getElementById(`turno-check-${t}`).checked) {
-      total += calcHorasTurno(
-        document.getElementById(`entrada-${t}`).value,
-        document.getElementById(`saida-${t}`).value
-      );
-    }
-  });
-  document.getElementById('turno-total-horas').textContent =
-    total > 0 ? `${total.toFixed(1)}h` : '0h';
-}
-
-function atualizarCalcTurno(id) {
-  const h = calcHorasTurno(
-    document.getElementById(`entrada-${id}`).value,
-    document.getElementById(`saida-${id}`).value
-  );
-  const el = document.getElementById(`calc-${id}`);
-  el.textContent = h > 0 ? `${h.toFixed(1)}h` : '—';
-  atualizarTotalTurnos();
-}
-
-function resetarTurnos() {
-  ['manha','tarde','noite'].forEach(t => {
-    const check = document.getElementById(`turno-check-${t}`);
-    check.checked = false;
-    document.getElementById(`bloco-${t}`).classList.remove('ativo');
-    document.getElementById(`horarios-${t}`).classList.add('hidden');
-    document.getElementById(`entrada-${t}`).value = '';
-    document.getElementById(`saida-${t}`).value = '';
-    document.getElementById(`calc-${t}`).textContent = '—';
-  });
-  document.getElementById('turno-total-horas').textContent = '0h';
-}
-
-function setupModalFuncionario() {
-  // Botão abrir modal
-  document.getElementById('btn-novo-func').addEventListener('click', () => {
-    editingFuncId = null;
-    document.getElementById('modal-func-titulo').textContent = 'Novo Funcionário';
-    document.getElementById('form-func').reset();
-    resetarTurnos();
-    document.getElementById('func-btn-text').textContent = 'Salvar';
-    abrirModal('modal-func');
-  });
-  document.getElementById('btn-fechar-modal-func').addEventListener('click', () => fecharModal('modal-func'));
-  document.getElementById('btn-cancelar-modal-func').addEventListener('click', () => fecharModal('modal-func'));
-  document.getElementById('form-func').addEventListener('submit', salvarFuncionario);
-
-  // Checkboxes dos turnos
-  ['manha','tarde','noite'].forEach(t => {
-    const check = document.getElementById(`turno-check-${t}`);
-    const bloco = document.getElementById(`bloco-${t}`);
-    const horarios = document.getElementById(`horarios-${t}`);
-    check.addEventListener('change', () => {
-      if (check.checked) {
-        bloco.classList.add('ativo');
-        horarios.classList.remove('hidden');
-      } else {
-        bloco.classList.remove('ativo');
-        horarios.classList.add('hidden');
-        document.getElementById(`entrada-${t}`).value = '';
-        document.getElementById(`saida-${t}`).value = '';
-        document.getElementById(`calc-${t}`).textContent = '—';
-        atualizarTotalTurnos();
-      }
-    });
-    // Recalcula ao mudar horários
-    document.getElementById(`entrada-${t}`).addEventListener('change', () => atualizarCalcTurno(t));
-    document.getElementById(`saida-${t}`).addEventListener('change', () => atualizarCalcTurno(t));
-  });
-}
-
-function abrirModalEditar(id) {
-  const f = allFuncionarios.find(x => x.id === id);
-  if (!f) return;
-  editingFuncId = id;
-  document.getElementById('modal-func-titulo').textContent = 'Editar Funcionário';
-  document.getElementById('func-nome').value = f.nome;
-  document.getElementById('func-cargo').value = f.cargo;
-  resetarTurnos();
-
-  // Restaura turnos salvos
-  const turnos = f.turnos || [];
-  turnos.forEach(t => {
-    const check = document.getElementById(`turno-check-${t.id}`);
-    if (!check) return;
-    check.checked = true;
-    document.getElementById(`bloco-${t.id}`).classList.add('ativo');
-    document.getElementById(`horarios-${t.id}`).classList.remove('hidden');
-    document.getElementById(`entrada-${t.id}`).value = t.entrada || '';
-    document.getElementById(`saida-${t.id}`).value = t.saida || '';
-    atualizarCalcTurno(t.id);
-  });
-
-  document.getElementById('func-btn-text').textContent = 'Salvar Alterações';
-  abrirModal('modal-func');
-}
-
-async function salvarFuncionario(e) {
-  e.preventDefault();
-  const nome    = document.getElementById('func-nome').value.trim();
-  const cargo   = document.getElementById('func-cargo').value.trim();
-  const errEl   = document.getElementById('func-form-error');
-  const btnText = document.getElementById('func-btn-text');
-
-  // Coleta turnos selecionados
-  const turnos = [];
-  let horasTurno = 0;
-  ['manha','tarde','noite'].forEach(t => {
-    const check = document.getElementById(`turno-check-${t}`);
-    if (!check.checked) return;
-    const entrada = document.getElementById(`entrada-${t}`).value;
-    const saida   = document.getElementById(`saida-${t}`).value;
-    const horas   = calcHorasTurno(entrada, saida);
-    turnos.push({ id: t, entrada, saida, horas });
-    horasTurno += horas;
-  });
-
-  errEl.classList.add('hidden');
-  if (!turnos.length) {
-    errEl.textContent = 'Selecione ao menos um turno com os horários de entrada e saída.';
-    errEl.classList.remove('hidden'); return;
-  }
-  const semHorario = turnos.find(t => !t.entrada || !t.saida);
-  if (semHorario) {
-    errEl.textContent = `Preencha entrada e saída do turno de ${TURNO_LABEL[semHorario.id]}.`;
-    errEl.classList.remove('hidden'); return;
-  }
-
-  btnText.textContent = 'Salvando...';
-  const dados = { nome, cargo, turnos, horasTurno: Math.round(horasTurno * 100) / 100 };
-
-  try {
-    if (editingFuncId) {
-      await updateDoc(doc(db, 'funcionarios_rh', editingFuncId), dados);
-      showToast('✅ Funcionário atualizado!', 'success');
-    } else {
-      await addDoc(collection(db, 'funcionarios_rh'), {
-        ...dados, totalHorasExtras: 0, criadoEm: serverTimestamp()
-      });
-      showToast('✅ Funcionário cadastrado!', 'success');
-    }
-    fecharModal('modal-func');
-  } catch(err) {
-    errEl.textContent = 'Erro ao salvar: ' + err.message;
-    errEl.classList.remove('hidden');
-  } finally {
-    btnText.textContent = editingFuncId ? 'Salvar Alterações' : 'Salvar';
-  }
-}
-
-async function excluirFuncionario(id, nome) {
-  if (!confirm(`Excluir "${nome}"?\n\nOs registros de horas deste funcionário serão mantidos.`)) return;
-  try {
-    await deleteDoc(doc(db, 'funcionarios_rh', id));
-    showToast(`🗑️ ${nome} removido.`, 'success');
-  } catch(err) {
-    showToast('❌ Erro ao excluir: ' + err.message, 'error');
-  }
 }
 
 // ================================================================

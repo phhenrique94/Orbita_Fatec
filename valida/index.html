@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validação do Cartão - Órbita FATEC</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F4F7FB;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #031426;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 350px;
+            width: 90%;
+        }
+        .icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 20px;
+        }
+        .icon.loading { background: #E2E8F0; }
+        .icon.valid { background: #10B981; color: white; }
+        .icon.invalid { background: #EF4444; color: white; }
+        .title { font-size: 1.5rem; font-weight: 800; margin-bottom: 10px; }
+        .subtitle { font-size: 1rem; color: #64748B; margin-bottom: 5px; }
+        .name { font-size: 1.2rem; font-weight: 600; margin-bottom: 20px; }
+        .role { font-size: 0.9rem; font-weight: 600; text-transform: uppercase; background: #E2E8F0; padding: 5px 10px; border-radius: 20px; display: inline-block; }
+        @keyframes spin { 100% { transform: rotate(360deg); } } 
+        .spin { animation: spin 1s linear infinite; } 
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="card" id="result-card">
+        <div class="icon loading" id="icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        </div>
+        <div class="title" id="title">Verificando...</div>
+        <div class="subtitle" id="subtitle">Aguarde a validação do cartão.</div>
+        <div class="name" id="name"></div>
+        <div class="role hidden" id="role"></div>
+    </div>
+    
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const uid = urlParams.get('uid');
+
+        const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
+          ? `http://${window.location.hostname}:3000/api` 
+          : '/api';
+
+        async function validate() {
+            if (!uid) {
+                showError("QR Code Inválido. Falta identificação.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/validacao/${uid}`);
+                const data = await res.json();
+                
+                if (data.valid) {
+                    showValid(data.name, data.role);
+                } else {
+                    showError(data.message || "Cartão Inválido");
+                }
+            } catch (err) {
+                showError("Erro de conexão. Tente novamente.");
+            }
+        }
+
+        function showValid(name, role) {
+            document.getElementById('icon').className = 'icon valid';
+            document.getElementById('icon').innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+            document.getElementById('title').innerText = 'Cartão Válido!';
+            document.getElementById('title').style.color = '#10B981';
+            document.getElementById('subtitle').innerText = 'Funcionário autorizado.';
+            document.getElementById('name').innerText = name || 'Nome indisponível';
+            if (role) {
+                const r = document.getElementById('role');
+                // Format role nicely
+                const roleLabels = { adm_l1: 'ADM N1', adm_l2: 'ADM N2', ti: 'T.I.', rh: 'RH', visitante: 'Visitante' };
+                r.innerText = roleLabels[role] || role;
+                r.classList.remove('hidden');
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('icon').className = 'icon invalid';
+            document.getElementById('icon').innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+            document.getElementById('title').innerText = 'Cartão Inválido';
+            document.getElementById('title').style.color = '#EF4444';
+            document.getElementById('subtitle').innerText = message;
+        }
+
+        validate();
+    </script>
+</body>
+</html>

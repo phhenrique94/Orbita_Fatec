@@ -39,8 +39,8 @@ const analytics = getAnalytics(fbApp);
 const auth     = getAuth(fbApp);
 const db       = getFirestore(fbApp); // Mantido apenas para Auth Guard (users)
 
-const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') 
-  ? 'http://localhost:3000/api' 
+const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
+  ? `http://${window.location.hostname}:3000/api` 
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
@@ -414,6 +414,19 @@ function setupModals() {
   document.getElementById('btn-salvar-role').addEventListener('click',     salvarRole);
   document.getElementById('btn-send-reset').addEventListener('click',      enviarResetSenha);
 
+  // Toggle Status Ativo
+  document.getElementById('edit-status-ativo').addEventListener('change', async (e) => {
+    const isAtivo = e.target.checked;
+    const uid = document.getElementById('edit-uid').value;
+    try {
+      await apiFetch(`/usuarios/${uid}/status`, { method: 'PUT', body: JSON.stringify({ ativo: isAtivo }) });
+      showToast(`✅ Status alterado para ${isAtivo ? 'Ativo' : 'Inativo'}`, 'success');
+    } catch (err) {
+      e.target.checked = !isAtivo; // Reverte visualmente
+      showToast(`❌ Erro: ${err.message}`, 'error');
+    }
+  });
+
   // Modal Cargo
   document.getElementById('btn-fechar-cargo').addEventListener('click',   () => fecharModal('modal-cargo'));
   document.getElementById('btn-cancelar-cargo').addEventListener('click', () => fecharModal('modal-cargo'));
@@ -483,6 +496,10 @@ function abrirModalEditar(uid, name, role, email) {
   // Set role
   const radio = document.querySelector(`input[name="edit-role"][value="${role}"]`);
   if (radio) radio.checked = true;
+
+  // Set status
+  const isAtivo = user.ativo !== false;
+  document.getElementById('edit-status-ativo').checked = isAtivo;
 
   abrirModal('modal-editar');
 }

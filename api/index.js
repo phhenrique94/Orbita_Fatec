@@ -19,12 +19,18 @@ const rotasUsuarios = require('./rotas/usuarios');
 const rotasEnsalamento = require('./rotas/ensalamento');
 const rotasMeuEspaco = require('./rotas/meu-espaco');
 const rotasCargaHoraria = require('./rotas/carga-horaria');
+const rotasEmpresas = require('./rotas/empresas');
+const rotasValidacao = require('./rotas/validacao');
+const rotasAppKeys = require('./rotas/app-keys');
 
 app.use('/api/emprestimos', rotasEmprestimo);
 app.use('/api/usuarios', rotasUsuarios);
 app.use('/api/ensalamento', rotasEnsalamento);
 app.use('/api/meu-espaco', rotasMeuEspaco);
 app.use('/api/carga-horaria', rotasCargaHoraria);
+app.use('/api/empresas', rotasEmpresas);
+app.use('/api/validacao', rotasValidacao);
+app.use('/api/app-keys', rotasAppKeys);
 
 // Exportação obrigatória para o Vercel Serverless
 

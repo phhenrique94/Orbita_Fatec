@@ -18,8 +18,8 @@ const analytics = getAnalytics(fbApp);
 const auth   = getAuth(fbApp);
 const db     = getFirestore(fbApp);
 
-const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') 
-  ? 'http://localhost:3000/api' 
+const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
+  ? `http://${window.location.hostname}:3000/api` 
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
