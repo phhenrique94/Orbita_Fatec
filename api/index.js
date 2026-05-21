@@ -5,8 +5,19 @@ require('dotenv').config();
 const app = express();
 
 // Middlewares globais
-app.use(cors());
+const corsOptions = {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+    optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
+// Responder a todos os preflights OPTIONS explicitamente
+app.options('*', cors(corsOptions));
+
 app.use(express.json());
+
 
 // Rota de Teste para garantir que a API está no ar
 app.get('/api', (req, res) => {
