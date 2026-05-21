@@ -1,8 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 
-import { firebaseConfig } from "../core/firebase-config.js";
-import { setupLayout } from "../core/layout.js";
+import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../core/layout.js";
 import { getRoleConfig } from "../core/permissions.js";
 import { secureAction, sanitizeHTML, escapeHTML as esc } from "../core/security.js";
 
@@ -30,26 +29,54 @@ async function apiFetch(endpoint, options = {}) {
 
 let currentUser = null;
 let currentRole = null;
+let appInitialized = false;
+let initializedRole = null;
 
 // ================================================================
 //  AUTH GUARD & INIT
 // ================================================================
+const cached = getCachedAuth();
+if (cached) {
+  currentUser = cached.user;
+  currentRole = cached.role;
+  initApp(cached.user, cached.role);
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentUser = user;
     try {
-      const userData = await apiFetch('/usuarios/me');
-      currentRole = userData.role || 'ti';
-    } catch(e) { currentRole = 'visitante'; }
+      const token = await user.getIdToken();
+      let role = 'visitante';
+      try {
+        const userData = await apiFetch('/usuarios/me');
+        role = userData.role || 'ti';
+      } catch(e) {
+        role = cached ? cached.role : 'visitante';
+      }
 
-    initApp(user, currentRole);
+      setCachedAuth(user, role, token);
+
+      if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
+        currentRole = role;
+        initApp(user, role);
+      }
+    } catch (err) {
+      console.error("Erro na revalidação de auth:", err);
+    }
   } else {
+    clearCachedAuth();
     window.location.href = '../auth/login.html';
   }
 });
 
 async function initApp(user, role) {
+  if (appInitialized && initializedRole === role) return;
+  appInitialized = true;
+  initializedRole = role;
+
   setupLayout(user, role, 'dashboard', async () => {
+    clearCachedAuth();
     await signOut(auth);
     window.location.href = '../auth/login.html';
   });

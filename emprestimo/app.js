@@ -10,7 +10,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
 import { firebaseConfig } from "../core/firebase-config.js";
-import { setupLayout } from "../core/layout.js";
+import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../core/layout.js";
 import { escapeHTML as esc } from "../core/security.js";
 
 const fbApp  = initializeApp(firebaseConfig);
@@ -23,7 +23,12 @@ const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.ho
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
-  const token = await currentUser.getIdToken();
+  let token = '';
+  if (currentUser && typeof currentUser.getIdToken === 'function') {
+    token = await currentUser.getIdToken();
+  } else if (auth.currentUser) {
+    token = await auth.currentUser.getIdToken();
+  }
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
@@ -52,13 +57,66 @@ let currentUser  = null;
 const isDashboard   = !!document.getElementById('notebook-grid');
 const isMovimentar  = !!document.getElementById('movimentacao-form');
 
+let appInitialized = false;
+let initializedRole = null;
+
+async function initApp(user, role) {
+  if (appInitialized && initializedRole === role) return;
+  appInitialized = true;
+  initializedRole = role;
+
+  // Set avatar initial - Prioritiza o nome cadastrado no Perfil do Firebase
+  const userName = user.displayName || user.email.split('@')[0];
+  const av       = document.getElementById('header-avatar');
+  const nameEl   = document.getElementById('user-name-display');
+  if (av) av.textContent = userName.charAt(0).toUpperCase();
+  if (nameEl) nameEl.textContent = userName;
+
+  const roleBadge = document.getElementById('role-badge');
+  if (roleBadge) {
+    roleBadge.textContent = (role === 'adm_l1' ? 'ADM N1' : (role === 'adm_l2' ? 'ADM N2' : role.toUpperCase()));
+    if (role === 'adm_l1' || role === 'adm_l2') {
+      roleBadge.style.background = 'rgba(235, 112, 37, 0.1)';
+      roleBadge.style.color = 'var(--orange)';
+    } else {
+      roleBadge.style.background = 'rgba(124, 58, 237, 0.1)';
+      roleBadge.style.color = 'var(--purple-bright)';
+    }
+  }
+
+  // Esconde o bloqueio se estiver logado
+  const guard = document.getElementById('auth-guard');
+  if (guard) guard.classList.add('hidden');
+  
+  setupLayout(user, role, 'emprestimo', async () => {
+    clearCachedAuth();
+    await signOut(auth);
+    window.location.href = '../auth/login.html';
+  });
+
+  await loadNotebooks();
+
+  if (isDashboard)  initDashboard();
+  if (isMovimentar) initMovimentar();
+}
+
+// Check cache immediately
+const cached = getCachedAuth();
+if (cached && ['adm_l1', 'adm_l2', 'ti'].includes(cached.role)) {
+  currentUser = cached.user;
+  initApp(cached.user, cached.role);
+}
+
 // ---- Auth Guard ----
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    document.getElementById('auth-guard').classList.remove('hidden');
+    clearCachedAuth();
+    const guard = document.getElementById('auth-guard');
+    if (guard) guard.classList.remove('hidden');
     const loginWrapper = document.getElementById('login-wrapper');
     if (loginWrapper) {
-      document.getElementById('auth-loading').classList.add('hidden');
+      const authLoading = document.getElementById('auth-loading');
+      if (authLoading) authLoading.classList.add('hidden');
       loginWrapper.classList.remove('hidden');
       
       const loginForm = document.getElementById('login-form-movimentar');
@@ -85,24 +143,17 @@ onAuthStateChanged(auth, async (user) => {
     }
     return;
   }
-  document.getElementById('auth-guard').classList.add('hidden');
+  
   currentUser = user;
-
-  // Set avatar initial - Prioritiza o nome cadastrado no Perfil do Firebase
-  const userName = user.displayName || user.email.split('@')[0];
-  const av       = document.getElementById('header-avatar');
-  const nameEl   = document.getElementById('user-name-display');
-  if (av) av.textContent = userName.charAt(0).toUpperCase();
-  if (nameEl) nameEl.textContent = userName;
 
   // Buscar Papel (Role) via API
   let role = 'visitante';
   try {
     const userData = await apiFetch('/usuarios/me');
     role = userData.role || 'visitante';
-  } catch (err) {}
-
-  const roleBadge = document.getElementById('role-badge');
+  } catch (err) {
+    role = cached ? cached.role : 'visitante';
+  }
 
   // Buscar Permissões Globais via API
   let perms = { view: false, execute: false };
@@ -113,16 +164,8 @@ onAuthStateChanged(auth, async (user) => {
     // Falha silenciosa para segurança
   }
 
-  if (roleBadge) {
-    roleBadge.textContent = (role === 'adm_l1' ? 'ADM N1' : (role === 'adm_l2' ? 'ADM N2' : role.toUpperCase()));
-    if (role === 'adm_l1' || role === 'adm_l2') {
-      roleBadge.style.background = 'rgba(235, 112, 37, 0.1)';
-      roleBadge.style.color = 'var(--orange)';
-    } else {
-      roleBadge.style.background = 'rgba(124, 58, 237, 0.1)';
-      roleBadge.style.color = 'var(--purple-bright)';
-    }
-  }
+  const token = await user.getIdToken();
+  setCachedAuth(user, role, token);
 
   // Verifica se pode VER o módulo
   if (role !== 'adm_l1' && !perms.view) {
@@ -133,21 +176,13 @@ onAuthStateChanged(auth, async (user) => {
   // Se não puder EXECUTAR, esconde botões globais
   if (role !== 'adm_l1' && !perms.execute) {
     document.body.classList.add('hide-execute');
+  } else {
+    document.body.classList.remove('hide-execute');
   }
 
-  // Esconde o bloqueio se estiver logado
-  const guard = document.getElementById('auth-guard');
-  if (guard) guard.classList.add('hidden');
-  
-  setupLayout(user, role, 'emprestimo', async () => {
-    await signOut(auth);
-    window.location.href = '../auth/login.html';
-  });
-
-  await loadNotebooks();
-
-  if (isDashboard)  initDashboard();
-  if (isMovimentar) initMovimentar();
+  if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
+    initApp(user, role);
+  }
 });
 
 // ================================================================

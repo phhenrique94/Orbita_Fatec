@@ -30,7 +30,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
 import { firebaseConfig } from "../core/firebase-config.js";
-import { setupLayout } from "../core/layout.js";
+import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../core/layout.js";
 import { escapeHTML as esc } from "../core/security.js";
 
 
@@ -44,7 +44,12 @@ const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.ho
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
-  const token = await currentUser.getIdToken();
+  let token = '';
+  if (currentUser && typeof currentUser.getIdToken === 'function') {
+    token = await currentUser.getIdToken();
+  } else if (auth.currentUser) {
+    token = await auth.currentUser.getIdToken();
+  }
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
@@ -73,52 +78,80 @@ const userCount    = document.getElementById('user-count');
 const searchInput  = document.getElementById('search-users');
 const userList     = document.getElementById('user-list');
 
+let appInitialized = false;
+let initializedRole = null;
 
-// ================================================================
-//  AUTH GUARD — Só ADM entra
-// ================================================================
-onAuthStateChanged(auth, async (user) => {
-  if (!user) { window.location.href = '../auth/login.html'; return; }
-
-  currentUser = user;
-  const name  = user.displayName || user.email.split('@')[0];
-
-  // Busca role e permissões do usuário
-    // 1. Busca role do usuário via API
-    try {
-      const userData = await apiFetch('/usuarios/me');
-      currentRole = userData.role || 'visitante';
-    } catch(e) {
-      currentRole = 'visitante';
-    }
-
-    // 2. BUSCA PERMISSÕES GLOBAIS
-    let perms = { view: false, execute: false };
-    try {
-      const globalData = await apiFetch('/usuarios/config/permissions');
-      const rolePerms = globalData[currentRole] || {};
-      perms = rolePerms['usuarios'] || { view: false, execute: false };
-    } catch(e) {}
-
-    // ADM L1 entra direto. Outros precisam de permissão 'view' vinda do Config Global.
-    if (currentRole !== 'adm_l1' && !perms.view) {
-      authGuard.classList.remove('hidden');
-      return;
-    }
-
-    // Se não tiver permissão 'execute', bloqueia ações de edição/delete
-    if (currentRole !== 'adm_l1' && !perms.execute) {
-      document.body.classList.add('hide-execute');
-    }
+async function initApp(user, role) {
+  if (appInitialized && initializedRole === role) return;
+  appInitialized = true;
+  initializedRole = role;
 
   // Inicializar o novo Layout
-  setupLayout(user, currentRole, 'usuarios', async () => {
+  setupLayout(user, role, 'usuarios', async () => {
+    clearCachedAuth();
     await signOut(auth);
     window.location.href = '../auth/login.html';
   });
 
   mainContent.classList.remove('hidden');
   initPage();
+}
+
+// Check cache immediately
+const cached = getCachedAuth();
+if (cached && ['adm_l1', 'adm_l2', 'ti'].includes(cached.role)) {
+  currentUser = cached.user;
+  currentRole = cached.role;
+  initApp(cached.user, cached.role);
+}
+
+// ================================================================
+//  AUTH GUARD — Só ADM entra
+// ================================================================
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    clearCachedAuth();
+    window.location.href = '../auth/login.html';
+    return;
+  }
+
+  currentUser = user;
+
+  // Busca role e permissões do usuário
+  try {
+    const userData = await apiFetch('/usuarios/me');
+    currentRole = userData.role || 'visitante';
+  } catch(e) {
+    currentRole = cached ? cached.role : 'visitante';
+  }
+
+  // BUSCA PERMISSÕES GLOBAIS
+  let perms = { view: false, execute: false };
+  try {
+    const globalData = await apiFetch('/usuarios/config/permissions');
+    const rolePerms = globalData[currentRole] || {};
+    perms = rolePerms['usuarios'] || { view: false, execute: false };
+  } catch(e) {}
+
+  const token = await user.getIdToken();
+  setCachedAuth(user, currentRole, token);
+
+  // ADM L1 entra direto. Outros precisam de permissão 'view' vinda do Config Global.
+  if (currentRole !== 'adm_l1' && !perms.view) {
+    window.location.href = '../meu-espaco/index.html';
+    return;
+  }
+
+  // Se não tiver permissão 'execute', bloqueia ações de edição/delete
+  if (currentRole !== 'adm_l1' && !perms.execute) {
+    document.body.classList.add('hide-execute');
+  } else {
+    document.body.classList.remove('hide-execute');
+  }
+
+  if (!appInitialized || initializedRole !== currentRole || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
+    initApp(user, currentRole);
+  }
 });
 
 // ================================================================

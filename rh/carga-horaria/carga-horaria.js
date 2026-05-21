@@ -5,7 +5,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 import { firebaseConfig } from "../../core/firebase-config.js";
-import { setupLayout } from "../../core/layout.js";
+import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../../core/layout.js";
 import { escapeHTML as esc } from "../../core/security.js";
 
 const app  = initializeApp(firebaseConfig);
@@ -16,7 +16,12 @@ const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.ho
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
-  const token = await auth.currentUser.getIdToken();
+  let token = '';
+  if (currentUser && typeof currentUser.getIdToken === 'function') {
+    token = await currentUser.getIdToken();
+  } else if (auth.currentUser) {
+    token = await auth.currentUser.getIdToken();
+  }
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
@@ -109,36 +114,64 @@ let histFuncAtual   = null;     // funcionário selecionado no histórico
 
 const TURNO_LABEL = { manha:'Manhã', tarde:'Tarde', noite:'Noite', integral:'Integral' };
 
-// ================================================================
-//  AUTH GUARD
-// ================================================================
+let appInitialized = false;
+let initializedRole = null;
+
+// Check cache immediately
+const cached = getCachedAuth();
+if (cached && ['adm_l1', 'adm_l2', 'rh'].includes(cached.role)) {
+  currentUser = cached.user;
+  initApp(cached.user, cached.role);
+}
+
 onAuthStateChanged(auth, async user => {
-  if (!user) { window.location.href = '/login.html'; return; }
+  if (!user) {
+    clearCachedAuth();
+    window.location.href = '/login.html';
+    return;
+  }
   currentUser = user;
 
   try {
+    const token = await user.getIdToken();
     const snap = await getDoc(doc(db, 'users', user.uid));
     const role = snap.exists() ? (snap.data().role || 'visitante') : 'visitante';
     const rolesPermitidos = ['adm_l1', 'adm_l2', 'rh'];
+
+    setCachedAuth(user, role, token);
 
     if (!rolesPermitidos.includes(role)) {
       document.getElementById('auth-guard').classList.remove('hidden');
       return;
     }
 
-    // Inicializar o layout
-    setupLayout(user, role, 'carga-horaria', async () => {
-      await signOut(auth);
-      window.location.href = '/login.html';
-    });
+    if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
+      initApp(user, role);
+    }
 
   } catch(e) {
-    document.getElementById('auth-guard').classList.remove('hidden'); return;
+    console.error("Erro na revalidação de auth:", e);
+    if (!appInitialized) {
+      document.getElementById('auth-guard').classList.remove('hidden');
+    }
   }
+});
+
+async function initApp(user, role) {
+  if (appInitialized && initializedRole === role) return;
+  appInitialized = true;
+  initializedRole = role;
+
+  // Inicializar o layout
+  setupLayout(user, role, 'carga-horaria', async () => {
+    clearCachedAuth();
+    await signOut(auth);
+    window.location.href = '/login.html';
+  });
 
   document.getElementById('main-content').classList.remove('hidden');
   inicializar();
-});
+}
 
 // (Logout is now handled by layout.js)
 

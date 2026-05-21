@@ -1,6 +1,6 @@
 import * as fb from './firebase-service.js';
 import { SimulationEngine } from './simulation-engine.js';
-import { setupLayout } from '../core/layout.js';
+import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from '../core/layout.js';
 import { escapeHTML as esc } from '../core/security.js';
 
 // --- STATE MANAGEMENT ---
@@ -25,15 +25,46 @@ const CLASS_TYPES = {
   carga_reservada: { label: 'Carga Reservada', class: 'entry-reservada', bg: 'bg-yellow' }
 };
 
+let appInitialized = false;
+let initializedRole = null;
+
+async function initApp(role) {
+  if (appInitialized && initializedRole === role) return;
+  appInitialized = true;
+  initializedRole = role;
+
+  setupLayout(currentUser, role, 'ensalamento', async () => {
+    clearCachedAuth();
+    await fb.auth.signOut();
+    window.location.href = '../auth/login.html';
+  });
+
+  setupEventListeners();
+  await loadAllData();
+  renderCalendar();
+}
+
+// Check cache immediately
+const cached = getCachedAuth();
+if (cached && ['adm_l1', 'adm_l2', 'ti'].includes(cached.role)) {
+  currentUser = cached.user;
+  initApp(cached.role);
+}
+
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
   fb.auth.onAuthStateChanged(async user => {
     if (user) {
       currentUser = user;
       
-      // Buscar Cargo do Usuário
-      const userSnap = await fb.getDoc(fb.doc(fb.db, 'users', user.uid));
-      const role = userSnap.exists() ? userSnap.data().role : 'visitante';
+      let role = 'visitante';
+      try {
+        // Buscar Cargo do Usuário
+        const userSnap = await fb.getDoc(fb.doc(fb.db, 'users', user.uid));
+        role = userSnap.exists() ? userSnap.data().role : 'visitante';
+      } catch (err) {
+        role = cached ? cached.role : 'visitante';
+      }
 
       // Buscar Permissões Globais
       let perms = { view: false, execute: false };
@@ -47,6 +78,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Falha silenciosa para segurança
       }
 
+      const token = await user.getIdToken();
+      setCachedAuth(user, role, token);
+
       // ADM L1 entra direto. Outros precisam de 'view'.
       if (role !== 'adm_l1' && !perms.view) {
         window.location.href = '../meu-espaco/index.html';
@@ -56,24 +90,19 @@ document.addEventListener('DOMContentLoaded', () => {
       // Se não puder executar, esconde botões
       if (role !== 'adm_l1' && !perms.execute) {
         document.body.classList.add('hide-execute');
+      } else {
+        document.body.classList.remove('hide-execute');
       }
 
-      initApp(role);
+      if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
+        initApp(role);
+      }
     } else {
+      clearCachedAuth();
       window.location.href = '../auth/login.html';
     }
   });
 });
-
-async function initApp(role) {
-  setupLayout(currentUser, role, 'ensalamento', () => {
-    fb.auth.signOut();
-  });
-
-  setupEventListeners();
-  await loadAllData();
-  renderCalendar();
-}
 
 async function loadAllData() {
   courses = await fb.getActive('courses');

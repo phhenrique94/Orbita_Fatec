@@ -10,7 +10,14 @@ const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.ho
   : '/api';
 
 export async function apiFetch(endpoint, options = {}) {
-  const token = await auth.currentUser.getIdToken();
+  let token = sessionStorage.getItem('orbita_token') || '';
+  if (auth.currentUser) {
+    try {
+      token = await auth.currentUser.getIdToken();
+    } catch (e) {
+      console.warn("Could not get ID token from auth.currentUser, using session storage token", e);
+    }
+  }
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,

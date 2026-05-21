@@ -120,6 +120,12 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
   // Injetar no DOM
   const wrapper = document.querySelector('.layout-wrapper');
   if (wrapper) {
+    const existingSidebar = wrapper.querySelector('.layout-sidebar');
+    if (existingSidebar) existingSidebar.remove();
+
+    const existingHeader = wrapper.querySelector('.layout-header');
+    if (existingHeader) existingHeader.remove();
+
     wrapper.insertBefore(sidebar, wrapper.firstChild);
     const main = wrapper.querySelector('.layout-main');
     if (main) {
@@ -131,6 +137,7 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
   const logoutBtn = document.getElementById('layout-logout-btn');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', () => {
+      clearCachedAuth();
       if (onLogout) onLogout();
     });
   }
@@ -141,4 +148,51 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
   
   const app = document.getElementById('app');
   if (app) app.classList.remove('hidden');
+}
+
+// ==========================================
+//  AUTH CACHING HELPERS
+// ==========================================
+export function getCachedAuth() {
+  const uid = sessionStorage.getItem('orbita_uid');
+  const email = sessionStorage.getItem('orbita_email');
+  const displayName = sessionStorage.getItem('orbita_displayName');
+  const role = sessionStorage.getItem('orbita_role');
+  const token = sessionStorage.getItem('orbita_token');
+
+  if (uid && role) {
+    return {
+      user: {
+        uid,
+        email,
+        displayName,
+        getIdToken: async () => sessionStorage.getItem('orbita_token') || token || ''
+      },
+      role,
+      token
+    };
+  }
+  return null;
+}
+
+export function setCachedAuth(user, role, token) {
+  if (user) {
+    sessionStorage.setItem('orbita_uid', user.uid);
+    sessionStorage.setItem('orbita_email', user.email || '');
+    sessionStorage.setItem('orbita_displayName', user.displayName || user.email?.split('@')[0] || '');
+  }
+  if (role) {
+    sessionStorage.setItem('orbita_role', role);
+  }
+  if (token) {
+    sessionStorage.setItem('orbita_token', token);
+  }
+}
+
+export function clearCachedAuth() {
+  sessionStorage.removeItem('orbita_uid');
+  sessionStorage.removeItem('orbita_email');
+  sessionStorage.removeItem('orbita_displayName');
+  sessionStorage.removeItem('orbita_role');
+  sessionStorage.removeItem('orbita_token');
 }

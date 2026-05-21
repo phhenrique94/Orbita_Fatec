@@ -93,6 +93,25 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 
 ## 8. Histórico de alterações
 
+### [2026-05-21] Otimização de Latência e Performance (Auth Caching)
+- Autor: Antigravity
+- Branch: main
+- Arquivos criados/alterados:
+  - `/core/layout.js` (Funções de cache e ajuste de setupLayout)
+  - `/meu-espaco/meu-espaco.js` (Implementação de cache na inicialização)
+  - `/empresas/app.js` (Implementação de cache na inicialização)
+  - `/rh/funcionarios/app.js` (Implementação de cache na inicialização e ajuste de apiFetch)
+  - `/rh/carga-horaria/carga-horaria.js` (Implementação de cache na inicialização e ajuste de apiFetch)
+  - `/emprestimo/app.js` (Implementação de cache na inicialização)
+  - `/usuarios/app.js` (Implementação de cache na inicialização)
+  - `/ensalamento/ensalamento.js` (Implementação de cache na inicialização)
+  - `/ensalamento/firebase-service.js` (Ajuste de apiFetch para suporte a cache)
+- Tipo: Otimização de Performance e Latência
+- Motivo: Eliminar o atraso e a tela de bloqueio "Autenticando..." nas transições de módulos causadas pelo recarregamento da página (MPA) e inicialização assíncrona do Firebase SDK.
+- Impacto: Navegação instantânea e suave entre os módulos administrativos do Órbita.
+- Como testar: Clicar nos links da sidebar e verificar se as páginas carregam sem exibir o loader "Autenticando...".
+- Como reverter: Remover as chamadas a `getCachedAuth()` e limpar as funções correspondentes no `/core/layout.js`.
+
 ### [2026-05-20] Criação do Clube de Vantagens (Parceiros) e Refatoração de RH
 - **Autor**: Equipe de Desenvolvimento
 - **Branch**: main
@@ -303,6 +322,22 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
   - Logue como ADM N1.
   - Acesse o módulo Usuários. Crie um novo cargo. Altere as permissões globais. Crie um novo usuário.
   - Verifique se as chamadas de rede vão para `/api/usuarios`.
+
+## 9. Diretrizes de Deploy no Vercel (Zero Config)
+
+Para garantir que o front-end estático e a API servida em Node.js (funções serverless) rodem corretamente em harmonia no Vercel, siga estas diretrizes essenciais de deploy:
+
+1. **Evitar Configuração de Builds Legada**:
+   - **NÃO** insira a propriedade `"builds": [...]` no arquivo `vercel.json`. 
+   - A configuração com `"builds"` anula as definições do projeto no painel da Vercel e impede o Vercel de gerenciar o build automaticamente, resultando frequentemente em erro de compilação ou telas `404 Not Found`.
+
+2. **Roteamento Zero Config**:
+   - A API do back-end reside na pasta `/api`. O Vercel detecta automaticamente e compila quaisquer arquivos dentro de `/api` (como `/api/index.js`) em funções serverless de forma transparente.
+   - O arquivo `vercel.json` deve conter apenas as regras de redirecionamento (`rewrites`) para direcionar chamadas HTTP sob `/api/*` ao entry point `/api/index.js`, e os cabeçalhos de CORS globais para tráfego seguro.
+
+3. **Deploy por Integração do Git**:
+   - O repositório está integrado à Vercel. Qualquer push ou mesclagem à branch `main` disparará um deploy de produção automaticamente.
+   - Mudanças nas rotas da API em desenvolvimento local devem ser testadas localmente (`npm run dev`) antes do push para produção.
 
 ---
 *Fim da documentação.*

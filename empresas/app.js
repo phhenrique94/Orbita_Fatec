@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 import { firebaseConfig } from "../core/firebase-config.js";
-import { setupLayout } from '../core/layout.js';
+import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from '../core/layout.js';
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -29,32 +29,60 @@ async function apiFetch(endpoint, options = {}) {
 
 let empresas = [];
 
+let appInitialized = false;
+let initializedRole = null;
+
 // ==========================================
 // AUTH GUARD E INICIALIZAÇÃO
 // ==========================================
+const cached = getCachedAuth();
+if (cached && (cached.role === 'adm_l1' || cached.role === 'adm_l2')) {
+  currentUser = cached.user;
+  initApp(cached.user, cached.role);
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    clearCachedAuth();
     window.location.href = '../auth/login.html';
     return;
   }
   
   currentUser = user;
-
-  // Busca role
-  let role = 'visitante';
   try {
-    const userData = await apiFetch('/usuarios/me');
-    role = userData.role || 'visitante';
-  } catch (err) {}
+    const token = await user.getIdToken();
+    let role = 'visitante';
+    try {
+      const userData = await apiFetch('/usuarios/me');
+      role = userData.role || 'visitante';
+    } catch (err) {
+      role = cached ? cached.role : 'visitante';
+    }
 
-  // Apenas ADM N1 e ADM N2 podem acessar Empresas por enquanto
-  if (role !== 'adm_l1' && role !== 'adm_l2') {
-    window.location.href = '../meu-espaco/index.html';
-    return;
+    setCachedAuth(user, role, token);
+
+    // Apenas ADM N1 e ADM N2 podem acessar Empresas por enquanto
+    if (role !== 'adm_l1' && role !== 'adm_l2') {
+      window.location.href = '../meu-espaco/index.html';
+      return;
+    }
+
+    if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
+      initApp(user, role);
+    }
+  } catch (err) {
+    console.error("Erro na revalidação de auth:", err);
   }
+});
+
+async function initApp(user, role) {
+  if (appInitialized && initializedRole === role) return;
+  appInitialized = true;
+  initializedRole = role;
 
   // Inicializa a navegação
   setupLayout(user, role, 'empresas', async () => {
+    clearCachedAuth();
     await signOut(auth);
     window.location.href = '../auth/login.html';
   });
@@ -63,7 +91,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById('app-root').classList.remove('hidden');
   setupFilters();
   await loadEmpresas();
-});
+}
 
 // ==========================================
 // FUNÇÕES DO MÓDULO
