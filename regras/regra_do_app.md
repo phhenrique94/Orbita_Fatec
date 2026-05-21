@@ -93,6 +93,31 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 
 ## 8. Histórico de alterações
 
+### [2026-05-21] Redesenho do Modal de Editar Usuário e Uniformização de Cards de Cargos
+- Autor: Antigravity
+- Branch: main
+- Arquivos alterados:
+  - `/usuarios/index.html` (Reestruturação do modal em 2 colunas e ajuste de cabeçalho)
+  - `/usuarios/app.js` (Ajustes na extração de título/descrição de cargos e exibição de dados)
+  - `/usuarios/usuarios.css` (Criação de grid responsivo do modal, uniformização de altura dos cards de cargo e estado checked genérico)
+- Tipo: Refatoração UI/UX e Estilização
+- Motivo: O modal de edição antigo era muito longo, necessitava de scroll vertical e os cards de cargos tinham tamanhos desiguais dependendo do comprimento do texto.
+- Impacto: Modal com visual premium, mais compacto e sem scroll em desktops. Grade de seleção de cargos limpa, legível e simétrica.
+- Como testar: No módulo de usuários, abrir o modal de edição de qualquer usuário. O modal deve abrir largo, em 2 colunas horizontais, com cards de cargos com a mesma altura.
+- Como reverter: Descartar as alterações feitas em `/usuarios/index.html`, `/usuarios/app.js` e `/usuarios/usuarios.css` para a versão anterior.
+
+### [2026-05-21] Rota de Alteração de Senha do Próprio Usuário (App Móvel)
+- Autor: Antigravity
+- Branch: main
+- Arquivos alterados:
+  - `/api/rotas/usuarios.js` (Criação da rota `PUT /me/senha`)
+  - `/api/middlewares/auth.js` (Ajustado middleware para permitir que usuários não adm acessem rotas `/me/*`)
+- Tipo: Segurança e API backend
+- Motivo: Permitir que os funcionários cadastrados possam redefinir suas próprias senhas de forma segura diretamente através do app móvel.
+- Impacto: Funcionários não-administradores agora podem atualizar suas senhas via API utilizando seu Token ID do Firebase sem comprometer o isolamento de dados do painel web.
+- Como testar: Enviar uma requisição HTTP `PUT /api/usuarios/me/senha` com um token JWT válido de usuário não administrador.
+- Como reverter: Excluir a rota `PUT /me/senha` de `/api/rotas/usuarios.js` e desfazer a alteração no middleware `/api/middlewares/auth.js`.
+
 ### [2026-05-21] Otimização de Latência e Performance (Auth Caching)
 - Autor: Antigravity
 - Branch: main
