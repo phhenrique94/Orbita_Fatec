@@ -38,7 +38,7 @@ async function apiFetch(endpoint, options = {}) {
   const user = auth.currentUser || (currentUser ? currentUser : (getCachedAuth() ? getCachedAuth().user : null));
   if (!user) throw new Error("Usuário não autenticado");
   
-  const token = typeof user.getIdToken === 'function' ? await user.getIdToken() : sessionStorage.getItem('orbita_token');
+  const token = typeof user.getIdToken === 'function' ? await user.getIdToken() : localStorage.getItem('orbita_token');
   
   const headers = {
     'Content-Type': 'application/json',
@@ -95,7 +95,10 @@ function updateTimerUI() {
 
 function generateQRCode(uid) {
   const timestamp = Math.floor(Date.now() / 1000);
-  const currentOrigin = window.location.origin;
+  let currentOrigin = window.location.origin;
+  if (window.location.hostname.endsWith('vercel.app')) {
+    currentOrigin = 'https://orbita-fatec-ti.vercel.app';
+  }
   const qrText = `${currentOrigin}/fidelidade/validar.html?u=${uid}&t=${timestamp}`;
   
   const qrcodeContainer = document.getElementById("qrcode");

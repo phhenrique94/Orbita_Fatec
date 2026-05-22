@@ -10,7 +10,7 @@ const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.ho
   : '/api';
 
 export async function apiFetch(endpoint, options = {}) {
-  let token = sessionStorage.getItem('orbita_token') || '';
+  let token = localStorage.getItem('orbita_token') || '';
   if (auth.currentUser) {
     try {
       token = await auth.currentUser.getIdToken();

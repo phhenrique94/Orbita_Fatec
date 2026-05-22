@@ -52,7 +52,7 @@ onAuthStateChanged(auth, async (user) => {
       let role = 'visitante';
       try {
         const userData = await apiFetch('/usuarios/me');
-        role = userData.role || 'ti';
+        role = userData.role || 'visitante';
       } catch(e) {
         role = cached ? cached.role : 'visitante';
       }

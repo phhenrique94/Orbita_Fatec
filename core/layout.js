@@ -232,11 +232,11 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
 //  AUTH CACHING HELPERS
 // ==========================================
 export function getCachedAuth() {
-  const uid = sessionStorage.getItem('orbita_uid');
-  const email = sessionStorage.getItem('orbita_email');
-  const displayName = sessionStorage.getItem('orbita_displayName');
-  const role = sessionStorage.getItem('orbita_role');
-  const token = sessionStorage.getItem('orbita_token');
+  const uid = localStorage.getItem('orbita_uid');
+  const email = localStorage.getItem('orbita_email');
+  const displayName = localStorage.getItem('orbita_displayName');
+  const role = localStorage.getItem('orbita_role');
+  const token = localStorage.getItem('orbita_token');
 
   if (uid && role) {
     return {
@@ -244,7 +244,7 @@ export function getCachedAuth() {
         uid,
         email,
         displayName,
-        getIdToken: async () => sessionStorage.getItem('orbita_token') || token || ''
+        getIdToken: async () => localStorage.getItem('orbita_token') || token || ''
       },
       role,
       token
@@ -255,22 +255,22 @@ export function getCachedAuth() {
 
 export function setCachedAuth(user, role, token) {
   if (user) {
-    sessionStorage.setItem('orbita_uid', user.uid);
-    sessionStorage.setItem('orbita_email', user.email || '');
-    sessionStorage.setItem('orbita_displayName', user.displayName || user.email?.split('@')[0] || '');
+    localStorage.setItem('orbita_uid', user.uid);
+    localStorage.setItem('orbita_email', user.email || '');
+    localStorage.setItem('orbita_displayName', user.displayName || user.email?.split('@')[0] || '');
   }
   if (role) {
-    sessionStorage.setItem('orbita_role', role);
+    localStorage.setItem('orbita_role', role);
   }
   if (token) {
-    sessionStorage.setItem('orbita_token', token);
+    localStorage.setItem('orbita_token', token);
   }
 }
 
 export function clearCachedAuth() {
-  sessionStorage.removeItem('orbita_uid');
-  sessionStorage.removeItem('orbita_email');
-  sessionStorage.removeItem('orbita_displayName');
-  sessionStorage.removeItem('orbita_role');
-  sessionStorage.removeItem('orbita_token');
+  localStorage.removeItem('orbita_uid');
+  localStorage.removeItem('orbita_email');
+  localStorage.removeItem('orbita_displayName');
+  localStorage.removeItem('orbita_role');
+  localStorage.removeItem('orbita_token');
 }

@@ -19,7 +19,8 @@ const corsOptions = {
         // Permite requisições sem origin (Postman, APK nativo, curl, etc.)
         // E permite qualquer porta no localhost/127.0.0.1 para desenvolvimento local
         const isLocalhost = origin && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-        if (!origin || ALLOWED_ORIGINS.includes(origin) || isLocalhost) {
+        const isVercelSubdomain = origin && /^https:\/\/.*\.vercel\.app$/.test(origin);
+        if (!origin || ALLOWED_ORIGINS.includes(origin) || isLocalhost || isVercelSubdomain) {
             callback(null, true);
         } else {
             callback(new Error(`CORS: Origem não autorizada — ${origin}`));
