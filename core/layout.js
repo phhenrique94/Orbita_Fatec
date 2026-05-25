@@ -297,6 +297,27 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
     .catch(() => {});
   }
 
+  // Primeiro acesso check para todos os cargos
+  if (token) {
+    const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
+      ? `http://${window.location.hostname}:3000/api` 
+      : '/api';
+
+    fetch(`${API_BASE}/usuarios/me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(res => {
+      if (res.ok) return res.json();
+      throw new Error();
+    })
+    .then(userData => {
+      if (userData && userData.primeiroAcesso === true) {
+        showFirstAccessModal(token, API_BASE);
+      }
+    })
+    .catch(() => {});
+  }
+
   // Remover auth-guard e mostrar app
   const authGuard = document.getElementById('auth-guard');
   if (authGuard) authGuard.style.display = 'none';
@@ -350,4 +371,221 @@ export function clearCachedAuth() {
   localStorage.removeItem('orbita_displayName');
   localStorage.removeItem('orbita_role');
   localStorage.removeItem('orbita_token');
+}
+
+function showFirstAccessModal(token, apiBase) {
+  // Evitar duplicar modal
+  if (document.getElementById('first-access-overlay')) return;
+
+  // Injetar estilos CSS
+  const style = document.createElement('style');
+  style.innerHTML = `
+    .first-access-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 20, 38, 0.85);
+      backdrop-filter: blur(12px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .first-access-card {
+      background: #FFFFFF;
+      border-radius: 20px;
+      width: 100%;
+      max-width: 420px;
+      padding: 2.5rem 2rem;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(15, 78, 184, 0.1);
+      text-align: center;
+      animation: firstAccessFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes firstAccessFadeIn {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .first-access-icon {
+      font-size: 3rem;
+      margin-bottom: 1.25rem;
+      display: inline-block;
+      animation: lockBounce 2s infinite ease-in-out;
+    }
+    @keyframes lockBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    .first-access-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #0B1F33;
+      margin-bottom: 0.5rem;
+    }
+    .first-access-desc {
+      font-size: 0.9rem;
+      color: #64748B;
+      line-height: 1.5;
+      margin-bottom: 2rem;
+    }
+    .first-access-form {
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .first-access-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .first-access-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #0B1F33;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .first-access-input {
+      width: 100%;
+      height: 46px;
+      padding: 0 1rem;
+      border: 1.5px solid #E5E7EB;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      color: #0B1F33;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .first-access-input:focus {
+      border-color: #0F4EB8;
+      box-shadow: 0 0 0 3px rgba(15, 78, 184, 0.1);
+    }
+    .first-access-btn {
+      width: 100%;
+      height: 48px;
+      background: linear-gradient(135deg, #0F4EB8, #1E63D6);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(15, 78, 184, 0.2);
+      transition: all 0.25s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .first-access-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(15, 78, 184, 0.3);
+    }
+    .first-access-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .first-access-error {
+      color: #EF4444;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-top: -0.25rem;
+      display: none;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Criar elemento do modal
+  const overlay = document.createElement('div');
+  overlay.id = 'first-access-overlay';
+  overlay.className = 'first-access-overlay';
+  overlay.innerHTML = `
+    <div class="first-access-card">
+      <span class="first-access-icon">🔐</span>
+      <h2 class="first-access-title">Primeiro Acesso</h2>
+      <p class="first-access-desc">Por motivos de segurança, você deve redefinir sua senha inicial antes de prosseguir para o sistema.</p>
+      
+      <form class="first-access-form" id="first-access-form">
+        <div class="first-access-group">
+          <label class="first-access-label">Nova Senha</label>
+          <input type="password" id="first-access-pwd" class="first-access-input" placeholder="Mínimo 6 caracteres" required minlength="6">
+        </div>
+        <div class="first-access-group">
+          <label class="first-access-label">Confirmar Nova Senha</label>
+          <input type="password" id="first-access-pwd-conf" class="first-access-input" placeholder="Digite a senha novamente" required minlength="6">
+        </div>
+        
+        <p class="first-access-error" id="first-access-error-msg"></p>
+        
+        <button type="submit" class="first-access-btn" id="first-access-submit-btn">
+          <span>Atualizar Senha</span>
+        </button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Adicionar lógica de envio
+  const form = document.getElementById('first-access-form');
+  const pwdInput = document.getElementById('first-access-pwd');
+  const confInput = document.getElementById('first-access-pwd-conf');
+  const errorMsg = document.getElementById('first-access-error-msg');
+  const submitBtn = document.getElementById('first-access-submit-btn');
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    errorMsg.style.display = 'none';
+
+    const pwd = pwdInput.value;
+    const conf = confInput.value;
+
+    if (pwd !== conf) {
+      errorMsg.textContent = 'As senhas não coincidem.';
+      errorMsg.style.display = 'block';
+      return;
+    }
+
+    if (pwd.length < 6) {
+      errorMsg.textContent = 'A senha deve conter pelo menos 6 caracteres.';
+      errorMsg.style.display = 'block';
+      return;
+    }
+
+    // Enviar redefinição
+    submitBtn.disabled = true;
+    submitBtn.querySelector('span').textContent = 'Processando...';
+
+    fetch(`${apiBase}/usuarios/me/senha`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ senha: pwd })
+    })
+    .then(res => {
+      if (!res.ok) {
+        return res.json().then(err => { throw new Error(err.error || 'Erro na redefinição'); });
+      }
+      return res.json();
+    })
+    .then(() => {
+      // Sucesso! Remover modal
+      overlay.remove();
+      // Mostrar alerta
+      alert('Sua senha foi redefinida com sucesso! Bem-vindo ao Órbita.');
+    })
+    .catch(err => {
+      errorMsg.textContent = err.message;
+      errorMsg.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.querySelector('span').textContent = 'Atualizar Senha';
+    });
+  });
 }

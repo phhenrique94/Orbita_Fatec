@@ -36,6 +36,10 @@ router.put('/me/senha', verifyToken, async (req, res) => {
 
         // Atualiza a senha no Firebase Auth utilizando o Admin SDK
         await auth.updateUser(req.user.uid, { password: novaSenha.trim() });
+
+        // Atualiza o Firestore para remover a flag de primeiro acesso
+        await db.collection('users').doc(req.user.uid).update({ primeiroAcesso: false });
+
         res.json({ success: true, message: 'Senha atualizada com sucesso!' });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -73,6 +77,7 @@ router.post('/', verifyToken, verifyToken.requireModulePermission('usuarios'), a
             email,
             role,
             ativo: true,
+            primeiroAcesso: true, // Força a troca de senha no primeiro acesso
             createdAt: new Date().toISOString(),
             createdBy: req.user.uid // req.user vem do verifyToken
         };
