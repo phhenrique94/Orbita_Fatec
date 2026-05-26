@@ -9,6 +9,9 @@ let courses = [];
 let classes = [];
 let rooms = [];
 let calendarEntries = [];
+let disciplines = []; // All imported disciplines/matrices
+let importType = 'matrix'; // 'matrix' or 'classes'
+let parsedImportData = null; // Stored parsed data from excel before confirmation
 let currentUser = null;
 let simulationLessons = []; // Temp lessons for simulator
 let currentSimulationResults = [];
@@ -112,11 +115,48 @@ async function loadAllData() {
   classes = await fb.getActive('classes');
   rooms = await fb.getActive('rooms');
   calendarEntries = await fb.getCalendarEntries();
+  disciplines = [];
 
   updateSelects();
+  updateAcademicPeriodDropdowns();
   renderCourses();
   renderClasses();
   renderRooms();
+}
+
+function updateAcademicPeriodDropdowns() {
+  const periods = [...new Set(classes.map(c => c.academicPeriod).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  
+  const dropdownIds = ['filter-academic-period', 'filter-tab-class-academic-period', 'sim-academic-period'];
+  dropdownIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    
+    const prevVal = el.value;
+    
+    let optionsHtml = '';
+    if (id === 'filter-tab-class-academic-period') {
+      optionsHtml += '<option value="">Todos</option>';
+    } else {
+      if (periods.length === 0) {
+        optionsHtml += '<option value="">Nenhum lote/período</option>';
+      }
+    }
+    
+    periods.forEach(p => {
+      optionsHtml += `<option value="${p}">${p}</option>`;
+    });
+    
+    el.innerHTML = optionsHtml;
+    
+    if (periods.includes(prevVal)) {
+      el.value = prevVal;
+    } else if (periods.length > 0) {
+      el.value = periods[0];
+    } else {
+      el.value = '';
+    }
+  });
 }
 
 // --- TAB NAVIGATION ---
@@ -133,7 +173,6 @@ function setupEventListeners() {
     });
   });
 
-
   // Modal Close Buttons
   document.querySelectorAll('.modal-close').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -142,7 +181,7 @@ function setupEventListeners() {
   });
 
   // Filters
-  ['filter-course', 'filter-room', 'filter-view-mode'].forEach(id => {
+  ['filter-course', 'filter-room', 'filter-view-mode', 'filter-academic-period'].forEach(id => {
     document.getElementById(id).addEventListener('change', renderCalendar);
   });
 
@@ -159,14 +198,14 @@ function setupEventListeners() {
   document.getElementById('form-room').addEventListener('submit', handleRoomSubmit);
 
   // Tab Filters
-  ['filter-tab-class-course', 'filter-tab-class-search'].forEach(id => {
+  ['filter-tab-class-course', 'filter-tab-class-search', 'filter-tab-class-academic-period'].forEach(id => {
     document.getElementById(id).addEventListener('input', renderClasses);
     if (document.getElementById(id).tagName === 'SELECT') {
       document.getElementById(id).addEventListener('change', renderClasses);
     }
   });
 
-  ['filter-tab-room-type', 'filter-tab-room-block', 'filter-tab-room-search'].forEach(id => {
+  ['filter-tab-room-type', 'filter-tab-room-equipment', 'filter-tab-room-search'].forEach(id => {
     document.getElementById(id).addEventListener('input', renderRooms);
     if (document.getElementById(id).tagName === 'SELECT') {
       document.getElementById(id).addEventListener('change', renderRooms);
@@ -193,9 +232,22 @@ function setupEventListeners() {
   });
 
   // Course -> Class Select Synchronization
-  document.getElementById('entry-course-id').addEventListener('change', (e) => updateClassCheckboxes(e.target.value, 'entry-classes-container'));
-  document.getElementById('sim-course-id').addEventListener('change', (e) => updateClassCheckboxes(e.target.value, 'sim-classes-container'));
+  document.getElementById('entry-course-id').addEventListener('change', (e) => {
+    updateClassCheckboxes(e.target.value, 'entry-classes-container');
+  });
+  document.getElementById('sim-course-id').addEventListener('change', (e) => {
+    updateClassCheckboxes(e.target.value, 'sim-classes-container');
+  });
+  document.getElementById('sim-academic-period').addEventListener('change', (e) => {
+    const courseId = document.getElementById('sim-course-id').value;
+    updateClassCheckboxes(courseId, 'sim-classes-container');
+  });
   document.getElementById('filter-course').addEventListener('change', renderCalendar); 
+  
+  // Import Dialog Listeners
+  document.getElementById('btn-import-classes').addEventListener('click', () => openImportModal('classes'));
+  document.getElementById('import-file-input').addEventListener('change', handleFileSelect);
+  document.getElementById('btn-confirm-import').addEventListener('click', handleConfirmImport);
 }
 
 // --- CALENDAR RENDER ---
@@ -204,10 +256,18 @@ async function renderCalendar() {
   const viewMode = document.getElementById('filter-view-mode').value;
   const courseFilter = document.getElementById('filter-course').value;
   const roomFilter = document.getElementById('filter-room').value;
+  const academicPeriodFilter = document.getElementById('filter-academic-period').value;
 
   const filteredEntries = calendarEntries.filter(entry => {
     if (courseFilter && entry.courseId !== courseFilter) return false;
     if (roomFilter && entry.roomId !== roomFilter) return false;
+    
+    // Filtrar por período letivo (academicPeriod)
+    const classIds = entry.classIds || [entry.classId];
+    const entryClasses = classes.filter(c => classIds.includes(c.id));
+    const matchesPeriod = entryClasses.some(c => c.academicPeriod === academicPeriodFilter) || entry.academicPeriod === academicPeriodFilter;
+    if (academicPeriodFilter && !matchesPeriod) return false;
+    
     return true;
   });
 
@@ -279,6 +339,7 @@ function renderOccupancyTable(container, entries, courseFilter) {
 
       let pillClass = '';
       let label = '';
+      let tooltip = '';
       if (dayEntry.classType === 'presencial') {
         const room = rooms.find(r => r.id === dayEntry.roomId);
         pillClass = 'pill-presencial';
@@ -291,7 +352,11 @@ function renderOccupancyTable(container, entries, courseFilter) {
         label = 'RESERVADA';
       }
 
-      return `<td><div class="status-pill ${pillClass}" onclick="openManualEntryModalById('${dayEntry.id}')">${label}</div></td>`;
+      if (dayEntry.disciplineName) {
+        tooltip = ` title="${esc(dayEntry.disciplineName)}${dayEntry.notes ? ' - ' + esc(dayEntry.notes) : ''}"`;
+      }
+
+      return `<td><div class="status-pill ${pillClass}"${tooltip} onclick="openManualEntryModalById('${dayEntry.id}')">${label}</div></td>`;
     }).join('');
 
     const entryIds = group.entries.map(e => e.id).join(',');
@@ -303,9 +368,9 @@ function renderOccupancyTable(container, entries, courseFilter) {
           <div style="display:flex; justify-content:space-between; align-items:start">
             <div>
               <div style="font-weight:900; letter-spacing:0.5px">${esc(course.name)}</div>
-              <div style="font-size:0.7rem; color:rgba(255,255,255,0.4); margin-top:0.2rem">${turmasNames}</div>
+              <div style="font-size:0.7rem; color:#64748B; margin-top:0.2rem">${turmasNames}</div>
             </div>
-            <button class="btn-icon action-execute" style="color:#ef4444; opacity:0.3; padding:4px" onclick="deleteEntryGroup('${entryIds}')">
+            <button class="btn-icon action-execute" style="color:#ef4444; opacity:0.6; padding:4px; transition:opacity 0.2s;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.6'" onclick="deleteEntryGroup('${entryIds}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
           </div>
@@ -381,7 +446,7 @@ function renderPeriodGrid(container, entries) {
         div.className = `calendar-entry ${typeCfg.class}`;
         div.innerHTML = `
           <span class="entry-title">${turma ? esc(turma.name) : 'Turma N/A'}</span>
-          <span class="entry-subtitle">${course ? esc(course.code) : ''}</span>
+          <span class="entry-subtitle">${course ? esc(course.code) : ''}${entry.disciplineName ? ` - ${esc(entry.disciplineName)}` : ''}</span>
           ${entry.roomId ? `<span class="entry-room">${sala ? esc(sala.name) : 'N/A'}</span>` : ''}
         `;
         div.onclick = () => openManualEntryModal(entry);
@@ -449,6 +514,7 @@ function openClassModal(turma = null) {
   document.getElementById('class-modal-title').textContent = turma ? 'Editar Turma' : 'Nova Turma';
   document.getElementById('class-id').value = turma ? turma.id : '';
   document.getElementById('class-course-id').value = turma ? turma.courseId : '';
+  document.getElementById('class-academic-period').value = turma ? (turma.academicPeriod || '') : (document.getElementById('filter-academic-period').value || '2025.2');
   document.getElementById('class-name').value = turma ? turma.name : '';
   document.getElementById('class-semester').value = turma ? turma.semester : 1;
   document.getElementById('class-student-count').value = turma ? turma.studentCount : '';
@@ -461,6 +527,7 @@ async function handleClassSubmit(e) {
   const id = document.getElementById('class-id').value;
   const data = {
     courseId: document.getElementById('class-course-id').value,
+    academicPeriod: document.getElementById('class-academic-period').value.trim() || '2025.2',
     name: document.getElementById('class-name').value,
     semester: parseInt(document.getElementById('class-semester').value),
     studentCount: parseInt(document.getElementById('class-student-count').value),
@@ -478,11 +545,13 @@ function renderClasses() {
   const grid = document.getElementById('classes-grid');
   const courseFilter = document.getElementById('filter-tab-class-course').value;
   const searchFilter = document.getElementById('filter-tab-class-search').value.toLowerCase();
+  const academicPeriodFilter = document.getElementById('filter-tab-class-academic-period').value;
 
   let filtered = classes.filter(t => {
     const matchesCourse = !courseFilter || t.courseId === courseFilter;
     const matchesSearch = !searchFilter || t.name.toLowerCase().includes(searchFilter);
-    return matchesCourse && matchesSearch;
+    const matchesAcademicPeriod = !academicPeriodFilter || t.academicPeriod === academicPeriodFilter;
+    return matchesCourse && matchesSearch && matchesAcademicPeriod;
   });
 
   // Ordenar numericamente por semestre
@@ -519,7 +588,7 @@ function openRoomModal(sala = null) {
   document.getElementById('room-modal-title').textContent = sala ? 'Editar Sala' : 'Nova Sala';
   document.getElementById('room-id').value = sala ? sala.id : '';
   document.getElementById('room-name').value = sala ? sala.name : '';
-  document.getElementById('room-block').value = sala ? sala.block : '';
+  document.getElementById('room-equipment-type').value = sala ? (sala.equipmentType || 'UNI') : 'UNI';
   document.getElementById('room-capacity').value = sala ? sala.capacity : '';
   document.getElementById('room-type').value = sala ? sala.type : 'sala';
   document.getElementById('room-resources').value = sala ? (sala.resources || []).join(', ') : '';
@@ -533,7 +602,7 @@ async function handleRoomSubmit(e) {
   
   const data = {
     name: document.getElementById('room-name').value,
-    block: document.getElementById('room-block').value.toUpperCase(),
+    equipmentType: document.getElementById('room-equipment-type').value,
     capacity: parseInt(document.getElementById('room-capacity').value),
     type: document.getElementById('room-type').value,
     resources
@@ -549,24 +618,27 @@ async function handleRoomSubmit(e) {
 function renderRooms() {
   const grid = document.getElementById('rooms-grid');
   const typeFilter = document.getElementById('filter-tab-room-type').value;
-  const blockFilter = document.getElementById('filter-tab-room-block').value.toLowerCase();
+  const equipFilter = document.getElementById('filter-tab-room-equipment').value;
   const searchFilter = document.getElementById('filter-tab-room-search').value.toLowerCase();
 
   let filtered = rooms.filter(r => {
     const matchesType = !typeFilter || r.type === typeFilter;
-    const matchesBlock = !blockFilter || r.block.toLowerCase().includes(blockFilter);
+    const matchesEquip = !equipFilter || (r.equipmentType || 'UNI') === equipFilter;
     const matchesSearch = !searchFilter || r.name.toLowerCase().includes(searchFilter);
-    return matchesType && matchesBlock && matchesSearch;
+    return matchesType && matchesEquip && matchesSearch;
   });
 
   // Ordenar alfabeticamente/numéricamente pelo nome da sala
   filtered.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
+  const equipLabel = { UNI: 'Universitária', CCM: 'Cart. Cadeira Medicina', CC: 'Carteira e Cadeira' };
+
   grid.innerHTML = filtered.map(r => `
     <div class="data-card">
       <div>
-        <h3 style="margin-bottom:0.2rem">${esc(r.name)} - Bloco ${esc(r.block)}</h3>
+        <h3 style="margin-bottom:0.2rem">${esc(r.name)}</h3>
         <span class="badge bg-green">${esc(r.type)}</span>
+        <span class="badge" style="background:rgba(99,102,241,0.25); color:#a5b4fc">${esc(r.equipmentType || 'UNI')} &ndash; ${esc(equipLabel[r.equipmentType] || 'Universitária')}</span>
         <span class="badge" style="background:rgba(255,255,255,0.05)">Cap: ${esc(r.capacity)}</span>
       </div>
       <div style="font-size:0.75rem; color:rgba(255,255,255,0.5)">
@@ -685,6 +757,7 @@ function openManualEntryModal(entry = null) {
         cb.checked = classIds.includes(cb.value);
         if (isReadOnly) cb.disabled = true;
       });
+      document.getElementById('entry-discipline-name').value = entry.disciplineName || '';
     }, 100);
 
     document.getElementById('entry-weekday').value = entry.weekday;
@@ -721,6 +794,12 @@ async function handleManualEntrySubmit(e) {
     return;
   }
 
+  const disciplineName = document.getElementById('entry-discipline-name').value.trim();
+
+  // Determinar o período letivo
+  const matchedClass = classes.find(c => c.id === classIds[0]);
+  const academicPeriod = matchedClass ? matchedClass.academicPeriod : (document.getElementById('filter-academic-period').value || '2025.2');
+
   const data = {
     courseId: document.getElementById('entry-course-id').value,
     classIds: classIds,
@@ -729,7 +808,10 @@ async function handleManualEntrySubmit(e) {
     periods: periods,
     roomId: document.getElementById('entry-type').value === 'presencial' ? document.getElementById('entry-room-id').value : null,
     notes: document.getElementById('entry-notes').value,
-    source: 'manual'
+    source: 'manual',
+    disciplineId: null,
+    disciplineName: disciplineName || null,
+    academicPeriod: academicPeriod
   };
 
   // --- LÓGICA DE INVERSÃO/SWAP ---
@@ -855,7 +937,7 @@ function applyInstitutionalPattern() {
     { id: 1, lessonNumber: 1, classType: 'presencial', periods: [1, 2], roomSelectionMode: 'auto', selectedRoomId: '', requiredRoomType: '', requiredResources: [] },
     { id: 2, lessonNumber: 2, classType: 'presencial', periods: [1, 2], roomSelectionMode: 'auto', selectedRoomId: '', requiredRoomType: '', requiredResources: [] },
     { id: 3, lessonNumber: 3, classType: 'presencial', periods: [1, 2], roomSelectionMode: 'auto', selectedRoomId: '', requiredRoomType: '', requiredResources: [] },
-    { id: 4, lessonNumber: 4, classType: 'ead', periods: [1, 2], roomSelectionMode: 'auto', selectedRoomId: '', requiredRoomType: '', requiredResources: [] },
+    { id: 4, lessonNumber: 4, classType: 'ead',       periods: [1, 2], roomSelectionMode: 'auto', selectedRoomId: '', requiredRoomType: '', requiredResources: [] },
     { id: 5, lessonNumber: 5, classType: 'carga_reservada', periods: [1, 2], roomSelectionMode: 'auto', selectedRoomId: '', requiredRoomType: '', requiredResources: [] }
   ];
   renderSimulationLessons();
@@ -885,51 +967,16 @@ function renderSimulationLessons() {
   list.innerHTML = simulationLessons.map((lesson, idx) => `
     <div class="lesson-item">
       <h5>Aula #${lesson.lessonNumber}</h5>
-      
-      <div class="filter-group">
+
+      <div class="filter-group" style="grid-column: span 2;">
         <label>Tipo</label>
         <select onchange="updateLesson(${idx}, 'classType', this.value)" class="form-select">
           <option value="presencial" ${lesson.classType === 'presencial' ? 'selected' : ''}>Presencial</option>
           <option value="ead" ${lesson.classType === 'ead' ? 'selected' : ''}>EAD</option>
-          <option value="carga_reservada" ${lesson.classType === 'carga_reservada' ? 'selected' : ''}>Reservada</option>
-        </select>
-      </div>
-      
-      <div class="filter-group">
-        <label>Período</label>
-        <select onchange="updateLesson(${idx}, 'periods', this.value)" class="form-select">
-          <option value="1" ${lesson.periods.join(',') === '1' ? 'selected' : ''}>P1 (19:30 - 20:40)</option>
-          <option value="2" ${lesson.periods.join(',') === '2' ? 'selected' : ''}>P2 (21:00 - 22:30)</option>
-          <option value="1,2" ${lesson.periods.join(',') === '1,2' ? 'selected' : ''}>P1 & P2 (Noite Inteira)</option>
-        </select>
-      </div>
-      
-      <div class="filter-group" style="${lesson.classType !== 'presencial' ? 'display:none' : ''}">
-        <label>Modo de Sala</label>
-        <select onchange="updateLesson(${idx}, 'roomSelectionMode', this.value)" class="form-select">
-          <option value="auto" ${lesson.roomSelectionMode === 'auto' ? 'selected' : ''}>Automático (I.A.)</option>
-          <option value="preferred" ${lesson.roomSelectionMode === 'preferred' ? 'selected' : ''}>Preferência (Tenta 1º)</option>
-          <option value="required" ${lesson.roomSelectionMode === 'required' ? 'selected' : ''}>Obrigatória (Não Troca)</option>
-        </select>
-      </div>
-      
-      <div class="filter-group" style="${lesson.roomSelectionMode === 'auto' || lesson.classType !== 'presencial' ? 'display:none' : ''}">
-        <label>Sala Específica</label>
-        <select onchange="updateLesson(${idx}, 'selectedRoomId', this.value)" class="form-select">
-          <option value="">Selecione...</option>
-          ${roomOptions.replace(`value="${lesson.selectedRoomId}"`, `value="${lesson.selectedRoomId}" selected`)}
+          <option value="carga_reservada" ${lesson.classType === 'carga_reservada' ? 'selected' : ''}>Carga Reservada</option>
         </select>
       </div>
 
-      <div class="filter-group" style="${lesson.classType !== 'presencial' ? 'display:none' : ''}">
-        <label>Tipo de Sala Requerido</label>
-        <select onchange="updateLesson(${idx}, 'requiredRoomType', this.value)" class="form-select">
-          <option value="">Qualquer</option>
-          <option value="sala" ${lesson.requiredRoomType === 'sala' ? 'selected' : ''}>Sala Comum</option>
-          <option value="laboratorio" ${lesson.requiredRoomType === 'laboratorio' ? 'selected' : ''}>Laboratório</option>
-          <option value="auditorio" ${lesson.requiredRoomType === 'auditorio' ? 'selected' : ''}>Auditório</option>
-        </select>
-      </div>
       <button class="btn-icon action-execute" onclick="removeLesson(${idx})" style="position:absolute; top:1rem; right:1rem; color:#ef4444; background:rgba(239, 68, 68, 0.1); border-radius:10px; width:35px; height:35px;" title="Remover Aula">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
       </button>
@@ -938,17 +985,11 @@ function renderSimulationLessons() {
 }
 
 window.updateLesson = (idx, field, value) => {
-  if (field === 'periods') {
-    simulationLessons[idx].periods = value.split(',').map(Number);
-  } else {
-    simulationLessons[idx][field] = value;
-  }
-  
-  if (field === 'classType' && value !== 'presencial') {
-    simulationLessons[idx].roomSelectionMode = 'auto';
-    simulationLessons[idx].selectedRoomId = '';
-  }
-  
+  simulationLessons[idx][field] = value;
+  // Garantir que período sempre seja noite inteira e modo sempre auto
+  simulationLessons[idx].periods = [1, 2];
+  simulationLessons[idx].roomSelectionMode = 'auto';
+  simulationLessons[idx].selectedRoomId = '';
   renderSimulationLessons();
 };
 
@@ -1097,6 +1138,7 @@ window.exportSimulation = async (simId) => {
   }
 
   // Gravar no Firebase
+  const simAcademicPeriod = document.getElementById('sim-academic-period').value || '2026.1';
   for (const alloc of sim.allocations) {
     if (!alloc.weekday) continue;
     await fb.create('calendarEntries', {
@@ -1108,7 +1150,10 @@ window.exportSimulation = async (simId) => {
       roomId: alloc.suggestedRoomId,
       source: 'simulation',
       simulationId: sim.id,
-      notes: 'Exportado automaticamente do simulador.'
+      notes: 'Exportado automaticamente do simulador.',
+      disciplineId: alloc.disciplineId || null,
+      disciplineName: alloc.disciplineName || null,
+      academicPeriod: simAcademicPeriod
     });
   }
 
@@ -1129,10 +1174,22 @@ function updateClassCheckboxes(courseId, containerId) {
     return;
   }
 
-  const filtered = classes.filter(t => t.courseId === courseId).sort((a, b) => a.semester - b.semester);
+  let filtered = classes.filter(t => t.courseId === courseId).sort((a, b) => a.semester - b.semester);
+  
+  if (containerId === 'sim-classes-container') {
+    const simAcademicPeriod = document.getElementById('sim-academic-period').value;
+    if (simAcademicPeriod) {
+      filtered = filtered.filter(t => t.academicPeriod === simAcademicPeriod);
+    }
+  } else if (containerId === 'entry-classes-container') {
+    const calendarAcademicPeriod = document.getElementById('filter-academic-period').value;
+    if (calendarAcademicPeriod) {
+      filtered = filtered.filter(t => t.academicPeriod === calendarAcademicPeriod);
+    }
+  }
   
   if (filtered.length === 0) {
-    container.innerHTML = '<p style="color:rgba(255,255,255,0.3); font-size:0.8rem; padding:0.5rem">Nenhuma turma para este curso.</p>';
+    container.innerHTML = '<p style="color:rgba(255,255,255,0.3); font-size:0.8rem; padding:0.5rem">Nenhuma turma para este curso no período letivo.</p>';
     return;
   }
 
@@ -1156,7 +1213,7 @@ function updateSelects() {
   const roomOptions = sortedRooms.map(r => `<option value="${r.id}">${r.name} - ${r.block} (Cap: ${r.capacity})</option>`).join('');
 
   const selects = [
-    'filter-course', 'class-course-id', 'entry-course-id', 'sim-course-id', 'filter-tab-class-course'
+    'filter-course', 'class-course-id', 'entry-course-id', 'sim-course-id', 'filter-tab-class-course', 'filter-matrix-course'
   ];
   selects.forEach(id => {
     const el = document.getElementById(id);
@@ -1178,6 +1235,245 @@ function updateSelects() {
   // Initial populate of dependent containers
   updateClassCheckboxes(document.getElementById('entry-course-id').value, 'entry-classes-container');
   updateClassCheckboxes(document.getElementById('sim-course-id').value, 'sim-classes-container');
+}
+
+// --- NEW ACADEMIC PLANNING FUNCTIONS ---
+
+function openImportModal(type) {
+  importType = type;
+  parsedImportData = null;
+  
+  const modal = document.getElementById('modal-import-data');
+  const title = document.getElementById('import-modal-title');
+  const fileInput = document.getElementById('import-file-input');
+  const previewContainer = document.getElementById('import-preview-container');
+  const confirmBtn = document.getElementById('btn-confirm-import');
+  
+  fileInput.value = '';
+  document.getElementById('import-classes-period-title').value = '';
+  previewContainer.style.display = 'none';
+  confirmBtn.disabled = true;
+  
+  title.textContent = 'Importar Turmas e Alunos (.xlsx)';
+  modal.style.display = 'flex';
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      parseClassesWorkbook(workbook);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao ler a planilha: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseClassesWorkbook(workbook) {
+  const result = [];
+  const sheetName = workbook.SheetNames.find(n => 
+    n.toLowerCase().includes('turma') || n.toLowerCase().includes('ensala') || n.toLowerCase().includes('aluno')
+  ) || workbook.SheetNames[0];
+  
+  const worksheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  if (rows.length < 2) {
+    alert('A planilha de turmas está vazia.');
+    return;
+  }
+  
+  let headerIdx = -1;
+  let headers = [];
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const r = rows[i] || [];
+    const rStr = r.map(c => String(c || '').toLowerCase().trim());
+    if (rStr.includes('curso') || rStr.includes('periodo') || rStr.includes('período') || rStr.includes('qtde de alunos') || rStr.includes('alunos')) {
+      headerIdx = i;
+      headers = rStr;
+      break;
+    }
+  }
+  
+  let colMapping = {
+    curso: 1,
+    periodo: 2,
+    alunos: 3
+  };
+  
+  if (headerIdx !== -1) {
+    headers.forEach((h, idx) => {
+      if (h.includes('curso')) colMapping.curso = idx;
+      else if (h.includes('período') || h.includes('periodo')) colMapping.periodo = idx;
+      else if (h.includes('aluno') || h.includes('qtde') || h.includes('capacidade') || h.includes('estudantes')) colMapping.alunos = idx;
+    });
+  }
+  
+  const startIndex = headerIdx !== -1 ? headerIdx + 1 : 0;
+  
+  for (let i = startIndex; i < rows.length; i++) {
+    const row = rows[i] || [];
+    if (row.length < 3) continue;
+    
+    const courseName = String(row[colMapping.curso] || '').trim();
+    const periodStr = String(row[colMapping.periodo] || '').trim();
+    const studentCount = parseInt(row[colMapping.alunos]) || 0;
+    
+    if (!courseName || !periodStr) continue;
+    if (courseName.toLowerCase() === 'curso' || periodStr.toLowerCase().includes('período')) continue;
+    
+    result.push({
+      courseName,
+      periodStr,
+      studentCount
+    });
+  }
+  
+  if (result.length === 0) {
+    alert('Nenhuma turma encontrada na planilha.');
+    return;
+  }
+  
+  parsedImportData = result;
+  renderImportPreview();
+}
+
+function renderImportPreview() {
+  const container = document.getElementById('import-preview-container');
+  const thead = document.getElementById('import-preview-thead');
+  const tbody = document.getElementById('import-preview-tbody');
+  const summary = document.getElementById('import-preview-summary');
+  const confirmBtn = document.getElementById('btn-confirm-import');
+  
+  container.style.display = 'block';
+  confirmBtn.disabled = false;
+  
+  thead.innerHTML = `
+    <tr>
+      <th style="text-align:left">Curso</th>
+      <th style="text-align:left">Período / Nome</th>
+      <th style="text-align:center">Alunos</th>
+    </tr>
+  `;
+  
+  let previewRowsHtml = '';
+  const previewLimit = Math.min(15, parsedImportData.length);
+  
+  for (let i = 0; i < previewLimit; i++) {
+    const c = parsedImportData[i];
+    previewRowsHtml += `
+      <tr>
+        <td>${esc(c.courseName)}</td>
+        <td>${esc(c.periodStr)}</td>
+        <td style="text-align:center">${c.studentCount}</td>
+      </tr>
+    `;
+  }
+  
+  tbody.innerHTML = previewRowsHtml;
+  summary.innerHTML = `Total de <strong>${parsedImportData.length} turmas</strong> detectadas.`;
+}
+
+async function handleConfirmImport() {
+  const periodTitleInput = document.getElementById('import-classes-period-title');
+  const academicPeriod = periodTitleInput.value.trim();
+  if (!academicPeriod) {
+    alert('Por favor, informe o título do período/lote das turmas.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-confirm-import');
+  const origText = btn.textContent;
+  btn.innerHTML = '<span class="spinner"></span> Importando...';
+  btn.disabled = true;
+  
+  try {
+    const uniqueCourseNames = [...new Set(parsedImportData.map(c => c.courseName))];
+    const courseMap = {};
+    const coursesToCreate = [];
+    
+    uniqueCourseNames.forEach(name => {
+      let normalized = name.toUpperCase().trim();
+      if (normalized === 'ARQUITETURA') normalized = 'ARQUITETURA URB.';
+      if (normalized === 'ENGENHARIA CIV.' || normalized === 'ENG. CIVIL') normalized = 'ENGENHARIA CÍVIL';
+      if (normalized === 'GEST.COMERCIAL') normalized = 'GESTÃO COMERCIAL';
+      if (normalized === 'GEST.FINANCEIRA') normalized = 'GESTÃO FINANCEIRA';
+      if (normalized === 'MED.VETERINÁRIA' || normalized === 'VETERINÁRIA') normalized = 'MEDICINA VETERINÁRIA';
+      if (normalized === 'CIÊNCIAS CONTÁBEIS') normalized = 'CONTÁBEIS';
+      if (normalized === 'GESTÃO DE RECURSOS HUMANOS') normalized = 'RECURSOS HUMANOS';
+
+      const existing = courses.find(c => c.name.trim().toUpperCase() === normalized);
+      if (existing) {
+        courseMap[name] = existing;
+      } else {
+        const sigla = normalized.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, '');
+        coursesToCreate.push({ name: normalized, code: sigla || 'CURS' });
+      }
+    });
+    
+    if (coursesToCreate.length > 0) {
+      const created = await fb.createCoursesBatch(coursesToCreate);
+      created.forEach(c => {
+        courseMap[c.name] = c;
+        const origExcelName = uniqueCourseNames.find(x => {
+          let norm = x.toUpperCase().trim();
+          if (norm === 'ARQUITETURA') norm = 'ARQUITETURA URB.';
+          if (norm === 'ENGENHARIA CIV.' || norm === 'ENG. CIVIL') norm = 'ENGENHARIA CÍVIL';
+          if (norm === 'GEST.COMERCIAL') norm = 'GESTÃO COMERCIAL';
+          if (norm === 'GEST.FINANCEIRA') norm = 'GESTÃO FINANCEIRA';
+          if (norm === 'MED.VETERINÁRIA' || norm === 'VETERINÁRIA') norm = 'MEDICINA VETERINÁRIA';
+          if (norm === 'CIÊNCIAS CONTÁBEIS') norm = 'CONTÁBEIS';
+          if (norm === 'GESTÃO DE RECURSOS HUMANOS') norm = 'RECURSOS HUMANOS';
+          return norm === c.name;
+        });
+        if (origExcelName) {
+          courseMap[origExcelName] = c;
+        }
+      });
+    }
+    
+    const oldClassesInPeriod = classes.filter(t => t.academicPeriod === academicPeriod);
+    for (const t of oldClassesInPeriod) {
+      await fb.remove('classes', t.id);
+    }
+    
+    const defaultCapacity = parseInt(document.getElementById('import-classes-default-capacity').value) || 40;
+    const classesToCreate = [];
+    
+    parsedImportData.forEach(item => {
+      const course = courseMap[item.courseName];
+      const semMatch = item.periodStr.match(/\d+/);
+      const semester = semMatch ? parseInt(semMatch[0]) : 1;
+      
+      classesToCreate.push({
+        courseId: course.id,
+        name: `${course.name} - ${item.periodStr}º Período`,
+        semester: semester,
+        academicPeriod: academicPeriod,
+        studentCount: item.studentCount || defaultCapacity,
+        shift: 'noturno',
+        active: true
+      });
+    });
+    
+    await fb.createClassesBatch(classesToCreate);
+    alert('Turmas importadas com sucesso!');
+    
+    document.getElementById('modal-import-data').style.display = 'none';
+    await loadAllData();
+  } catch (err) {
+    console.error(err);
+    alert('Erro ao importar os dados: ' + err.message);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
 }
 
 

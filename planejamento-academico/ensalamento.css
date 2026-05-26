@@ -672,16 +672,15 @@ select.form-select {
 }
 
 .pill-ead {
-  color: #facc15;
-  border: 1px solid rgba(250, 204, 21, 0.2);
-  box-shadow: 0 0 15px rgba(250, 204, 21, 0.1);
+  background: #FEF9C3;
+  color: #854D0E;
+  border: 1px solid #FEF08A;
 }
 
 .pill-reservada {
-  background: rgba(192, 132, 252, 0.1);
-  color: #c084fc;
-  border: 1px solid rgba(192, 132, 252, 0.2);
-  box-shadow: 0 0 15px rgba(192, 132, 252, 0.1);
+  background: #F3E8FF;
+  color: #7E22CE;
+  border: 1px solid #E9D5FF;
 }
 
 .cell-empty {

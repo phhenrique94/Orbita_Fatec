@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Órbita Fatec · Ensalamento</title>
+  <title>Órbita Fatec · Planejamento Acadêmico</title>
   <link rel="icon" type="image/png" href="/img/favicon.png">
   <link rel="stylesheet" href="/core/layout.css">
-  <link rel="stylesheet" href="/ensalamento/ensalamento.css">
+  <link rel="stylesheet" href="/planejamento-academico/ensalamento.css">
+  <!-- SheetJS CDN para parsing de planilhas Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -29,16 +31,16 @@
 
     <main class="ensalamento-container">
       <div style="margin-bottom: 3rem;">
-        <h1 style="font-size:3rem; font-weight:900; letter-spacing:-1px;">Ensalamento</h1>
-        <p style="color:rgba(255,255,255,0.5); font-size:1.1rem;">Mapa de ocupação semanal das turmas.</p>
+        <h1 style="font-size:3rem; font-weight:900; letter-spacing:-1px;">Planejamento Acadêmico</h1>
+        <p style="color:rgba(255,255,255,0.5); font-size:1.1rem;">Gestão de matrizes, turmas e ensalamento de salas.</p>
       </div>
 
       <!-- Tabs Navigation -->
       <nav class="tabs-nav">
         <button class="tab-btn active" data-tab="calendario">Mapa de Ocupação</button>
         <button class="tab-btn" data-tab="cursos">Cursos</button>
-        <button class="tab-btn" data-tab="turmas">Turmas</button>
-        <button class="tab-btn" data-tab="salas">Salas</button>
+        <button class="tab-btn" data-tab="turmas">Turmas e Alunos</button>
+        <button class="tab-btn" data-tab="salas">Salas e Espaços</button>
       </nav>
 
       <!-- TAB: CALENDÁRIO -->
@@ -57,6 +59,12 @@
         </div>
 
         <div class="filters-bar">
+          <div class="filter-group">
+            <label>Período Letivo</label>
+            <select id="filter-academic-period" class="form-select">
+              <option value="">Carregando...</option>
+            </select>
+          </div>
           <div class="filter-group">
             <label>Curso</label>
             <select id="filter-course" class="form-select">
@@ -99,10 +107,16 @@
       <section id="tab-turmas" class="tab-content">
         <div class="section-header">
           <h2>Turmas Cadastradas</h2>
-          <button class="btn-primary action-execute" id="btn-add-class">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nova Turma
-          </button>
+          <div style="display:flex; gap:1rem;">
+            <button class="btn-primary action-execute" id="btn-import-classes" style="background:white; color:var(--primary-blue); border:1px solid var(--border-color); box-shadow:none;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Importar Turmas (.xlsx)
+            </button>
+            <button class="btn-primary action-execute" id="btn-add-class">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Nova Turma
+            </button>
+          </div>
         </div>
 
         <div class="filters-bar">
@@ -110,6 +124,12 @@
             <label>Filtrar por Curso</label>
             <select id="filter-tab-class-course" class="form-select">
               <option value="">Todos os cursos</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Período Letivo</label>
+            <select id="filter-tab-class-academic-period" class="form-select">
+              <option value="">Todos</option>
             </select>
           </div>
           <div class="filter-group">
@@ -142,8 +162,13 @@
             </select>
           </div>
           <div class="filter-group">
-            <label>Bloco</label>
-            <input type="text" id="filter-tab-room-block" class="form-input" placeholder="Ex: Principal, Bloco A...">
+            <label>Equipamentos</label>
+            <select id="filter-tab-room-equipment" class="form-select">
+              <option value="">Todos</option>
+              <option value="UNI">UNI – Universitária</option>
+              <option value="CCM">CCM – Carteira e Cadeira Medicina</option>
+              <option value="CC">CC – Carteira e Cadeira</option>
+            </select>
           </div>
           <div class="filter-group">
             <label>Buscar Sala</label>
@@ -196,6 +221,10 @@
           <select id="class-course-id" class="form-select" required></select>
         </div>
         <div class="filter-group" style="margin-bottom:1rem">
+          <label>Período Letivo / Lote (ex: 2026.2)</label>
+          <input type="text" id="class-academic-period" class="form-input" required placeholder="Ex: 2026.2">
+        </div>
+        <div class="filter-group" style="margin-bottom:1rem">
           <label>Nome da Turma</label>
           <input type="text" id="class-name" class="form-input" required placeholder="Ex: 1º Semestre A">
         </div>
@@ -237,8 +266,12 @@
             <input type="text" id="room-name" class="form-input" required placeholder="Ex: Sala 204">
           </div>
           <div class="filter-group">
-            <label>Bloco</label>
-            <input type="text" id="room-block" class="form-input" required placeholder="Ex: A">
+            <label>Tipo de Equipamentos</label>
+            <select id="room-equipment-type" class="form-select" required>
+              <option value="UNI">UNI – Universitária</option>
+              <option value="CCM">CCM – Cart. Cadeira Medicina</option>
+              <option value="CC">CC – Carteira e Cadeira</option>
+            </select>
           </div>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem">
@@ -284,6 +317,11 @@
           <div id="entry-classes-container" class="checkbox-list-container">
             <p style="color:rgba(255,255,255,0.3); font-size:0.75rem; padding:0.5rem">Selecione um curso...</p>
           </div>
+        </div>
+
+        <div class="filter-group" style="grid-column: span 2;">
+          <label style="font-size: 0.7rem; margin-bottom: 0.4rem;">NOME DA DISCIPLINA / AULA</label>
+          <input type="text" id="entry-discipline-name" class="form-input" required placeholder="Ex: Anatomia Humana, Cálculo I..." style="padding: 0.8rem; font-size: 0.9rem;">
         </div>
 
         <div class="filter-group">
@@ -370,6 +408,12 @@
                   <select id="sim-course-id" class="form-select"></select>
                 </div>
                 <div class="filter-group">
+                  <label>Período Letivo</label>
+                  <select id="sim-academic-period" class="form-select">
+                    <option value="">Carregando...</option>
+                  </select>
+                </div>
+                <div class="filter-group">
                   <label>Turmas Envolvidas</label>
                   <div id="sim-classes-container" class="checkbox-list-container" style="max-height:140px;"></div>
                 </div>
@@ -382,10 +426,10 @@
                 <h5 style="font-size:0.8rem; color:var(--text-main); font-weight:800; text-transform:uppercase; letter-spacing:1px;">2. Estrutura das Aulas</h5>
                 <div style="display:flex; gap:0.5rem;">
                    <button class="btn-primary" id="btn-sim-institutional" style="padding:0.5rem 1rem; font-size:0.75rem; background:white; color:var(--primary-blue); border:1px solid var(--border-color); box-shadow:none;">
-                    Padrão Institucional (3+2)
+                    Padrão (3+2)
                   </button>
                   <button class="btn-primary" id="btn-sim-add-lesson" style="padding:0.5rem 1rem; font-size:0.75rem;">
-                    + Adicionar Aula
+                    + Aula
                   </button>
                 </div>
               </div>
@@ -427,8 +471,8 @@
       <div id="simulation-step-2" style="display:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem;">
           <h4>Sugestões Geradas</h4>
-          <button class="btn-primary" id="btn-back-to-lessons" style="background:rgba(255,255,255,0.05); padding:0.5rem 1rem; font-size:0.8rem;">
-            Ajustar Necessidades
+          <button class="btn-primary" id="btn-back-to-lessons" style="background:#1E293B; color:#fff; border:1px solid #334155; padding:0.5rem 1.2rem; font-size:0.8rem;">
+            ← Ajustar Necessidades
           </button>
         </div>
         
@@ -439,7 +483,51 @@
     </div>
   </div>
 
+  <!-- MODAL: IMPORTADOR DE DADOS -->
+  <div id="modal-import-data" class="modal-overlay">
+    <div class="modal-content wide" style="max-width: 850px;">
+      <div class="modal-header">
+        <h3 id="import-modal-title">Importar Dados</h3>
+        <button class="modal-close"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div style="padding: 1rem 0;">
+        <div class="filter-group" style="margin-bottom: 1.5rem;">
+          <label>Título do Período/Lote das Turmas (ex: 2026.2)</label>
+          <input type="text" id="import-classes-period-title" class="form-input" placeholder="Ex: 2026.2" required>
+        </div>
+        
+        <div class="filter-group" id="import-classes-capacity-group" style="margin-bottom: 1.5rem;">
+          <label>Capacidade Padrão para Turmas Novas (caso não especificado na planilha)</label>
+          <input type="number" id="import-classes-default-capacity" class="form-input" value="40" min="1">
+        </div>
+
+        <div class="filter-group" style="margin-bottom: 1.5rem;">
+          <label>Selecione o arquivo da Planilha (.xlsx, .xls ou .csv)</label>
+          <input type="file" id="import-file-input" class="form-input" accept=".xlsx, .xls, .csv">
+        </div>
+
+        <div id="import-preview-container" style="display:none; margin-top: 1.5rem;">
+          <h4 style="margin-bottom: 0.8rem;">Pré-visualização dos Dados</h4>
+          <div class="occupancy-table-container" style="max-height: 300px; overflow-y: auto;">
+            <table class="occupancy-table">
+              <thead id="import-preview-thead"></thead>
+              <tbody id="import-preview-tbody"></tbody>
+            </table>
+          </div>
+          <div id="import-preview-summary" style="margin-top: 1rem; font-size: 0.85rem; color: rgba(255,255,255,0.7); font-weight: bold;"></div>
+        </div>
+
+        <div style="display:flex; gap:1rem; margin-top: 2rem;">
+          <button id="btn-confirm-import" class="btn-primary" style="flex: 2;" disabled>Confirmar e Importar</button>
+          <button class="btn-primary modal-close" style="flex: 1; background: rgba(255,255,255,0.05); color: white; border: 1px solid var(--border-color); box-shadow: none;">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Scripts -->
-  <script type="module" src="/ensalamento/ensalamento.js"></script>
+  <script type="module" src="/planejamento-academico/ensalamento.js"></script>
 </body>
 </html>

@@ -97,6 +97,27 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 
 ## 8. Histórico de alterações
 
+### [2026-05-25] Controle de Acesso por Níveis (1, 2 e 3) e Troca de Senha Obrigatória no Primeiro Acesso
+- Autor: Antigravity
+- Branch: main
+- Arquivos alterados:
+  - `/api/middlewares/auth.js` (Implementada validação de níveis numéricos e normalização de legados)
+  - `/api/rotas/usuarios.js` (Adicionada proteção de rota com requireModulePermission e flag de primeiro acesso)
+  - `/core/layout.js` (Menu lateral filtrado e guarda de rotas dinâmicos atualizados para níveis; implementado modal de primeiro acesso)
+  - `/meu-espaco/meu-espaco.js` (Widget cards filtrados por níveis)
+  - `/emprestimo/app.js` (Controles de exibição e bloqueio baseados em níveis)
+  - `/ensalamento/ensalamento.js` (Controles de exibição, bloqueio e formulário de visualização baseados em níveis)
+  - `/usuarios/index.html` (Classes action-execute aplicadas a botões de ação e criação de cargos)
+  - `/usuarios/app.js` (Substituição de checkboxes por selects de nível, controle de botões dinâmicos e nível inicial padrão de cargos)
+  - `/usuarios/usuarios.css` (Regra CSS para desabilitar interruptor de status ativo/inativo e selects de permissões em modo leitura)
+- Tipo: Evolução de Segurança, RBAC e Usabilidade
+- Motivo: Simplificar o gerenciamento de acesso a cada módulo com Níveis de Acesso (1 - Sem Acesso, 2 - Apenas Leitura, 3 - Acesso Total), corrigir o erro de Forbidden 403 que impedia cargos permitidos de consultar a tela de Usuários, e forçar usuários recém-criados a redefinir sua senha inicial por motivos de segurança.
+- Impacto: Gerenciamento mais intuitivo e à prova de falhas para os administradores. Segurança aprimorada forçando senhas personalizadas no primeiro login de novos funcionários.
+- Como testar: 
+  - Criar um novo usuário de teste. Logar com ele e verificar se o modal de Primeiro Acesso bloqueia a tela até que seja definida uma nova senha de 6 caracteres.
+  - Logar com administrador e definir acesso do módulo de Usuários para T.I. como Nível 2 (Apenas Leitura). Logar como T.I., conferir que a página abre normalmente, mas todos os botões de ação e seletores de níveis estão bloqueados e esmaecidos.
+- Como reverter: Desfazer as alterações nos arquivos listados acima.
+
 ### [2026-05-25] Validação e Filtragem Dinâmica de Permissões (RBAC / Sidebar e Ações)
 - Autor: Antigravity
 - Branch: main

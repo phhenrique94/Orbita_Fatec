@@ -103,3 +103,33 @@ export async function checkConflict(weekday, periods, roomId, classId, excludeId
       body: JSON.stringify({ weekday, periods, roomId, classId, excludeId })
   });
 }
+
+export async function clearDisciplines(courseId, matrixName = '') {
+  const params = new URLSearchParams({ courseId });
+  if (matrixName) params.append('matrixName', matrixName);
+  return await apiFetch(`/ensalamento/custom/disciplines?${params.toString()}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function createDisciplinesBatch(disciplines) {
+  return await apiFetch(`/ensalamento/custom/disciplines/batch`, {
+    method: 'POST',
+    body: JSON.stringify({ disciplines })
+  });
+}
+
+export async function createCoursesBatch(courses) {
+  return await apiFetch(`/ensalamento/custom/courses/batch`, {
+    method: 'POST',
+    body: JSON.stringify({ courses })
+  });
+}
+
+export async function createClassesBatch(classes) {
+  return await apiFetch(`/ensalamento/custom/classes/batch`, {
+    method: 'POST',
+    body: JSON.stringify({ classes })
+  });
+}
+
