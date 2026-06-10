@@ -1086,36 +1086,50 @@ function loadLessonsFromMatrix() {
   }
   
   // Obter os semestres ativos das turmas selecionadas (ex: 1, 2, 3...)
-  const selectedSemesters = [...new Set(
-    checkedClassIds.flatMap(id => {
-      const c = classes.find(classItem => classItem.id === id);
-      if (!c) return [];
-      
-      // Se o nome da turma contiver múltiplos períodos (ex: "1 e 2º", "2 e 3º")
-      const matches = [...c.name.matchAll(/\d+/g)].map(m => parseInt(m[0]));
-      if (matches.length > 1) {
-        if (academicPeriod.endsWith('.2')) {
-          const even = matches.find(num => num % 2 === 0);
-          return even !== undefined ? [even] : [matches[0]];
-        } else {
-          const odd = matches.find(num => num % 2 !== 0);
-          return odd !== undefined ? [odd] : [matches[0]];
+  let selectedSemesters = [];
+  if (matrixSemesterValue === 'all') {
+    const allCourseSems = [...new Set(disciplines.filter(d => d.courseId === courseId).map(d => d.semester))];
+    selectedSemesters = allCourseSems.length > 0 ? allCourseSems : [1];
+  } else {
+    selectedSemesters = [...new Set(
+      checkedClassIds.flatMap(id => {
+        const c = classes.find(classItem => classItem.id === id);
+        if (!c) return [];
+        
+        // Se o nome da turma contiver múltiplos períodos (ex: "1 e 2º", "2 e 3º")
+        const matches = [...c.name.matchAll(/\d+/g)].map(m => parseInt(m[0]));
+        if (matches.length > 1) {
+          if (academicPeriod.endsWith('.2')) {
+            const even = matches.find(num => num % 2 === 0);
+            return even !== undefined ? [even] : [matches[0]];
+          } else {
+            const odd = matches.find(num => num % 2 !== 0);
+            return odd !== undefined ? [odd] : [matches[0]];
+          }
         }
-      }
-      
-      return [c.semester];
-    }).filter(Boolean)
-  )];
+        
+        return [c.semester];
+      }).filter(Boolean)
+    )];
+  }
   
   // Filtrar disciplinas correspondentes à matriz para o curso, período letivo e período da turma.
-  // Se não houver disciplinas cadastradas no período letivo exato (ex: 2026.2), tenta
-  // buscar no outro período letivo do mesmo ano (ex: 2026.1) ou qualquer outro disponível.
   const matchedDisciplines = [];
   selectedSemesters.forEach(sem => {
-    const courseSemDisciplines = disciplines.filter(d => 
+    let courseSemDisciplines = disciplines.filter(d => 
       d.courseId === courseId && 
       d.semester === sem
     );
+    
+    // Fallback para cursos como Agronegócio, RH (Turmas Mistas que estudam juntas)
+    // Se não encontrou disciplinas no semestre solicitado, busca no primeiro semestre disponível.
+    if (courseSemDisciplines.length === 0) {
+      const allCourseDisciplines = disciplines.filter(d => d.courseId === courseId);
+      if (allCourseDisciplines.length > 0) {
+        const fallbackSem = allCourseDisciplines[0].semester;
+        courseSemDisciplines = allCourseDisciplines.filter(d => d.semester === fallbackSem);
+      }
+    }
     
     if (courseSemDisciplines.length === 0) return;
     
@@ -1148,8 +1162,20 @@ function loadLessonsFromMatrix() {
     courseDisciplinesInDB: courseDisciplines.map(d => ({ name: d.name, period: d.academicPeriod, semester: d.semester }))
   });
   
-  if (matchedDisciplines.length > 0) {
-    simulationLessons = matchedDisciplines.map((d, index) => {
+  // Deduplicar disciplinas para o caso de importações duplicadas da matriz
+  const uniqueDisciplines = [];
+  const seenKeys = new Set();
+  for (const d of matchedDisciplines) {
+    // Usar nome da disciplina, semestre e curso como chave única
+    const key = `${d.courseId}_${d.semester}_${(d.name || '').trim().toLowerCase()}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      uniqueDisciplines.push(d);
+    }
+  }
+  
+  if (uniqueDisciplines.length > 0) {
+    simulationLessons = uniqueDisciplines.map((d, index) => {
       let classType = d.classType || 'presencial';
       if (d.chPres > 0) {
         classType = 'presencial';
@@ -1346,27 +1372,69 @@ function renderSimulationResults() {
         ${(sim.warnings || []).map(w => `<div class="point-item"><span class="point-icon icon-warn">!</span> <span style="color:#64748B">${w}</span></div>`).join('')}
       </div>
       
-      <div class="allocation-grid">
-        ${sim.allocations.map(a => `
-          <div class="allocation-item" style="border-left: 3px solid ${a.classType === 'presencial' ? 'var(--presencial)' : (a.classType === 'ead' ? 'var(--ead)' : 'var(--reservada)')}; background:#F1F5F9">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
-              <span style="font-weight:800; font-size:0.65rem; color:#64748B; text-transform:uppercase; letter-spacing:1px;">
-                ${a.weekday ? WEEKDAYS[a.weekday] : 'Não Alocada'}
-              </span>
-            </div>
-            <div style="font-size:0.9rem; font-weight:700; color:#1E293B; margin-bottom:0.2rem">
-              ${CLASS_TYPES[a.classType].label}
-            </div>
-            <div style="font-size:0.75rem; color:#64748B">
-              ${a.periods.length === 2 ? 'Noite Inteira' : 'Período P' + a.periods[0]}
-            </div>
-            ${a.suggestedRoomName ? `
-              <div class="entry-room" style="margin-top:0.8rem; background:#ffffff; color:#1E293B; padding:5px 10px; border-radius:8px; font-weight:800; font-size:0.7rem; border:1px solid #E2E8F0">
-                ${a.suggestedRoomName}
+      <div class="allocation-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; align-items: stretch;">
+        ${(() => {
+          const grouped = {};
+          sim.allocations.forEach(a => {
+            const dayKey = a.weekday || 99;
+            if (!grouped[dayKey]) grouped[dayKey] = [];
+            grouped[dayKey].push(a);
+          });
+          
+          const daysToRender = [1, 2, 3, 4, 5];
+          if (grouped[99]) daysToRender.push(99);
+          
+          return daysToRender.map(dayKey => {
+            const allocs = grouped[dayKey] || [];
+            const isUnallocated = dayKey == 99;
+            const dayLabel = isUnallocated ? 'Não Alocada' : WEEKDAYS[dayKey];
+            
+            if (allocs.length === 0 && !isUnallocated) {
+              return `
+                <div class="allocation-day-group" style="display:flex; flex-direction:column; gap:0.5rem; height:100%;">
+                  <div class="allocation-item" style="border-left: 3px solid var(--reservada); background:#F1F5F9; flex: 1; opacity: 0.7;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
+                      <span style="font-weight:800; font-size:0.65rem; color:#64748B; text-transform:uppercase; letter-spacing:1px;">
+                        ${dayLabel}
+                      </span>
+                    </div>
+                    <div style="font-size:0.9rem; font-weight:700; color:#1E293B; margin-bottom:0.2rem">
+                      Carga Reservada
+                    </div>
+                    <div style="font-size:0.75rem; color:#64748B">
+                      Dia Livre / Sem Aula
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+            
+            return `
+              <div class="allocation-day-group" style="display:flex; flex-direction:column; gap:0.5rem; height:100%;">
+                ${allocs.map(a => `
+                  <div class="allocation-item" style="border-left: 3px solid ${a.classType === 'presencial' ? 'var(--presencial)' : (a.classType === 'ead' ? 'var(--ead)' : 'var(--reservada)')}; background:#F1F5F9; flex: 1;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
+                      <span style="font-weight:800; font-size:0.65rem; color:#64748B; text-transform:uppercase; letter-spacing:1px;">
+                        ${dayLabel}
+                      </span>
+                    </div>
+                    <div style="font-size:0.9rem; font-weight:700; color:#1E293B; margin-bottom:0.2rem">
+                      ${CLASS_TYPES[a.classType] ? CLASS_TYPES[a.classType].label : a.classType}
+                    </div>
+                    <div style="font-size:0.75rem; color:#64748B">
+                      ${a.periods && a.periods.length === 2 ? 'Noite Inteira' : (a.periods ? 'Período P' + a.periods[0] : 'Auto')}
+                    </div>
+                    ${a.suggestedRoomName ? `
+                      <div class="entry-room" style="margin-top:0.8rem; background:#ffffff; color:#1E293B; padding:5px 10px; border-radius:8px; font-weight:800; font-size:0.7rem; border:1px solid #E2E8F0">
+                        ${a.suggestedRoomName}
+                      </div>
+                    ` : ''}
+                  </div>
+                `).join('')}
               </div>
-            ` : ''}
-          </div>
-        `).join('')}
+            `;
+          }).join('');
+        })()}
       </div>
     </div>
   `).join('');

@@ -43,7 +43,50 @@ router.put('/:id', verifyToken, verifyToken.requireModulePermission('emprestimo'
         // Remove o ID do payload para não duplicar dados dentro do documento
         if (data.id) delete data.id;
         
-        await db.collection('notebooks').doc(id).set(data, { merge: true });
+        const docRef = db.collection('notebooks').doc(id);
+        const docSnap = await docRef.get();
+        let historico = [];
+        
+        if (docSnap.exists) {
+            const oldData = docSnap.data();
+            if (oldData.historico && Array.isArray(oldData.historico)) {
+                historico = oldData.historico;
+            }
+            
+            // Registra um evento no historico
+            const evento = {
+                status: data.status || oldData.status,
+                updatedAt: data.updatedAt || new Date().toISOString(),
+                responsavel: data.responsavel || oldData.responsavel || 'Desconhecido',
+                observacao: data.observacao || '',
+                local: data.local || oldData.local || '',
+                sala: data.sala || oldData.sala || '',
+                funcionario: data.funcionario || oldData.funcionario || '',
+                setor: data.setor || oldData.setor || '',
+                requerente: data.requerente || oldData.requerente || ''
+            };
+            
+            historico.unshift(evento);
+            historico = historico.slice(0, 4); // Manter as 4 ultimas
+            data.historico = historico;
+        } else {
+            // Documento novo (cadastro)
+            const evento = {
+                status: data.status,
+                updatedAt: data.updatedAt || new Date().toISOString(),
+                responsavel: data.responsavel || 'Desconhecido',
+                observacao: data.observacao || '',
+                local: data.local || '',
+                sala: data.sala || '',
+                funcionario: data.funcionario || '',
+                setor: data.setor || '',
+                requerente: data.requerente || ''
+            };
+            historico.unshift(evento);
+            data.historico = historico;
+        }
+
+        await docRef.set(data, { merge: true });
         res.json({ status: 'success', message: `Equipamento ${id} atualizado.` });
     } catch (error) {
         console.error('Erro ao atualizar empréstimo:', error);

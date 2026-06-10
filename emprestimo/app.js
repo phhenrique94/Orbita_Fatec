@@ -51,6 +51,191 @@ const SALAS = [
 let notebooksDB = [];
 let currentUser  = null;
 
+// ---- Categories Management ----
+let categorias = ["Notebook", "Passador", "Caixa de Som", "Projetor"];
+
+function loadCategories() {
+  const saved = localStorage.getItem('emprestimo_categorias');
+  let loadedCats = ["Notebook", "Passador", "Caixa de Som", "Projetor"];
+  if (saved) {
+    try {
+      loadedCats = JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  
+  // Limpa loadedCats de valores inválidos ou legados como "Outros"
+  loadedCats = loadedCats.filter(c => c && c.trim() !== '' && c.toLowerCase() !== 'outros' && c.toLowerCase() !== 'outro');
+  
+  // Extrai categorias exclusivas do Firestore
+  const dbCats = new Set();
+  notebooksDB.forEach(n => {
+    if (n.tipo) {
+      const normalized = n.tipo.trim();
+      if (normalized && normalized.toLowerCase() !== 'outros' && normalized.toLowerCase() !== 'outro') {
+        dbCats.add(normalized);
+      }
+    }
+  });
+  
+  const merged = [...loadedCats];
+  dbCats.forEach(c => {
+    if (!merged.some(m => m.toLowerCase() === c.toLowerCase())) {
+      merged.push(c);
+    }
+  });
+  
+  // Garante que "Notebook" seja a primeira categoria, e remove qualquer residual de "Outros"
+  categorias = merged.filter(c => c.toLowerCase() !== 'outros' && c.toLowerCase() !== 'outro');
+  // Se por algum motivo 'Notebook' não estiver na lista, adiciona no início
+  if (!categorias.some(c => c.toLowerCase() === 'notebook')) {
+    categorias.unshift('Notebook');
+  }
+}
+
+function saveCategories() {
+  localStorage.setItem('emprestimo_categorias', JSON.stringify(categorias));
+}
+
+function populateCategorySelects() {
+  const cadSelect = document.getElementById('cad-tipo');
+  const filterSelect = document.getElementById('filter-categoria');
+  
+  if (cadSelect) {
+    const curVal = cadSelect.value;
+    cadSelect.innerHTML = '';
+    categorias.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      cadSelect.appendChild(opt);
+    });
+    if (curVal && categorias.includes(curVal)) {
+      cadSelect.value = curVal;
+    }
+  }
+  
+  if (filterSelect) {
+    const curVal = filterSelect.value || 'Todos';
+    filterSelect.innerHTML = '<option value="Todos">Todos</option>';
+    categorias.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      filterSelect.appendChild(opt);
+    });
+    if (categorias.includes(curVal)) {
+      filterSelect.value = curVal;
+    } else {
+      filterSelect.value = 'Todos';
+    }
+  }
+}
+
+function setupCategoryManagement() {
+  const btnAdd = document.getElementById('btn-add-tipo');
+  const btnSave = document.getElementById('btn-save-tipo');
+  const btnCancel = document.getElementById('btn-cancel-tipo');
+  const newCatGroup = document.getElementById('new-category-group');
+  const inputNewCat = document.getElementById('cad-tipo-novo');
+  const selectCat = document.getElementById('cad-tipo');
+  
+  if (btnAdd && newCatGroup) {
+    btnAdd.onclick = () => {
+      newCatGroup.classList.remove('hidden');
+      if (inputNewCat) {
+        inputNewCat.value = '';
+        inputNewCat.focus();
+      }
+    };
+  }
+  
+  if (btnCancel && newCatGroup) {
+    btnCancel.onclick = () => {
+      newCatGroup.classList.add('hidden');
+      if (inputNewCat) inputNewCat.value = '';
+    };
+  }
+  
+  if (btnSave && inputNewCat && selectCat) {
+    btnSave.onclick = () => {
+      const value = inputNewCat.value.trim();
+      if (!value) return;
+      
+      const exists = categorias.some(c => c.toLowerCase() === value.toLowerCase());
+      if (exists) {
+        alert('Essa categoria já existe.');
+        return;
+      }
+      
+      categorias.push(value);
+      saveCategories();
+      populateCategorySelects();
+      renderCategoryTabs();
+      
+      selectCat.value = value;
+      newCatGroup.classList.add('hidden');
+      inputNewCat.value = '';
+    };
+  }
+}
+
+function renderCategoryTabs() {
+  const container = document.getElementById('category-tabs-container');
+  if (!container) return;
+  
+  const currentCategory = document.getElementById('filter-categoria') 
+    ? document.getElementById('filter-categoria').value 
+    : 'Todos';
+    
+  container.innerHTML = '';
+  
+  // 1. Aba "Todos"
+  const allTab = document.createElement('button');
+  allTab.type = 'button';
+  allTab.dataset.category = 'Todos';
+  allTab.className = `tab-pill ${currentCategory === 'Todos' ? 'active' : ''}`;
+  allTab.textContent = 'Todos os Itens';
+  allTab.onclick = () => selectCategoryTab('Todos');
+  container.appendChild(allTab);
+  
+  // 2. Abas de cada categoria
+  categorias.forEach(cat => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.dataset.category = cat;
+    tab.className = `tab-pill ${currentCategory === cat ? 'active' : ''}`;
+    
+    // Contagem de itens nessa categoria para mostrar na aba
+    const count = notebooksDB.filter(n => n.tipo === cat).length;
+    tab.textContent = `${cat} (${count})`;
+    tab.onclick = () => selectCategoryTab(cat);
+    container.appendChild(tab);
+  });
+}
+
+function selectCategoryTab(category) {
+  const catSelect = document.getElementById('filter-categoria');
+  if (catSelect) {
+    catSelect.value = category;
+  }
+  
+  // Atualiza classe ativa das abas
+  const container = document.getElementById('category-tabs-container');
+  if (container) {
+    container.querySelectorAll('.tab-pill').forEach(btn => {
+      if (btn.dataset.category === category) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+  
+  applyFilters();
+}
+
 // ================================================================
 //  DETECT WHICH PAGE WE ARE ON
 // ================================================================
@@ -194,6 +379,18 @@ onAuthStateChanged(auth, async (user) => {
 async function loadNotebooks() {
   try {
     notebooksDB = await apiFetch('/emprestimos');
+    // Normaliza itens legados (sem tipo, 'Outros', 'outro', 'notbooks', etc.) para 'Notebook'
+    notebooksDB.forEach(n => {
+      if (!n.tipo || n.tipo.trim() === '' || n.tipo.toLowerCase() === 'outros' || n.tipo.toLowerCase() === 'outro' || n.tipo.toLowerCase() === 'notbooks' || n.tipo.toLowerCase() === 'notbook') {
+        n.tipo = 'Notebook';
+      }
+    });
+
+    if (isDashboard) {
+      loadCategories();
+      populateCategorySelects();
+      renderCategoryTabs();
+    }
   } catch (err) {
     console.error("Erro ao buscar da API:", err);
   }
@@ -214,6 +411,12 @@ function initDashboard() {
   const selSala = document.getElementById('filter-sala');
   SALAS.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; selSala.appendChild(o); });
 
+  // Populate categories initially
+  loadCategories();
+  populateCategorySelects();
+  setupCategoryManagement();
+  renderCategoryTabs();
+
   renderGrid(notebooksDB);
 
   // Polling via API REST para simular realtime
@@ -228,6 +431,9 @@ function initDashboard() {
   // Filters
   document.getElementById('search-input').addEventListener('input',  applyFilters);
   document.getElementById('filter-status').addEventListener('change', applyFilters);
+  document.getElementById('filter-categoria').addEventListener('change', (e) => {
+    selectCategoryTab(e.target.value);
+  });
   document.getElementById('filter-local').addEventListener('change',  applyFilters);
   document.getElementById('filter-sala').addEventListener('change',   applyFilters);
 
@@ -322,7 +528,13 @@ function initDashboard() {
     }
     // QR button
     const qrBtn = e.target.closest('.btn-qr');
-    if (qrBtn) { abrirQR(qrBtn.dataset.id); }
+    if (qrBtn) { abrirQR(qrBtn.dataset.id); return; }
+
+    // Card click (Historico)
+    const card = e.target.closest('.notebook-card');
+    if (card && !e.target.closest('.card-actions') && !e.target.closest('a') && !e.target.closest('button')) {
+      abrirHistorico(card.dataset.id);
+    }
   });
 
   // Reserva form
@@ -392,6 +604,52 @@ window.fecharModalReserva = function() {
   document.getElementById('form-reserva').reset();
 };
 
+window.abrirHistorico = function(id) {
+  const note = notebooksDB.find(n => n.id === id);
+  if (!note) return;
+  
+  document.getElementById('historico-subtitle').textContent = `Últimas movimentações de ${id}`;
+  const listEl = document.getElementById('historico-list');
+  listEl.innerHTML = '';
+  
+  if (!note.historico || note.historico.length === 0) {
+    listEl.innerHTML = '<p style="color:var(--text-muted); text-align:center;">Nenhum histórico encontrado.</p>';
+  } else {
+    note.historico.forEach(evento => {
+      let detalhe = '';
+      if (evento.status === 'emprestado') detalhe = `Sala ${esc(evento.sala)} - Req: ${esc(evento.requerente)}`;
+      else if (evento.status === 'cedido') detalhe = `Para: ${esc(evento.funcionario)} (${esc(evento.setor)})`;
+      else if (evento.status === 'guardado') detalhe = `Local: ${esc(evento.local)}`;
+      else if (evento.status === 'reservado') detalhe = `Motivo: ${esc(evento.observacao)}`;
+
+      const dt = evento.updatedAt ? new Date(evento.updatedAt).toLocaleString('pt-BR') : '---';
+      
+      const item = document.createElement('div');
+      item.style.cssText = 'padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 4px solid var(--c-' + evento.status + ');';
+      item.innerHTML = `
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+          <strong>${esc(evento.status.toUpperCase())}</strong>
+          <span style="font-size:0.8rem; color:var(--text-muted);">${dt}</span>
+        </div>
+        <div style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:0.3rem;">
+          ${detalhe}
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+          <span style="color:var(--purple-bright);">👤 ${esc(evento.responsavel)}</span>
+          ${evento.observacao && evento.status !== 'reservado' ? `<span style="font-style:italic; color:var(--text-muted);">💬 ${esc(evento.observacao)}</span>` : ''}
+        </div>
+      `;
+      listEl.appendChild(item);
+    });
+  }
+  
+  document.getElementById('modal-historico').classList.add('active');
+};
+
+window.fecharModalHistorico = function() {
+  document.getElementById('modal-historico').classList.remove('active');
+};
+
 window.abrirCadastro = function() {
   document.getElementById('modal-cadastro').classList.add('active');
 };
@@ -404,11 +662,13 @@ window.fecharCadastro = function() {
 function applyFilters() {
   const s   = document.getElementById('search-input').value.toLowerCase();
   const st  = document.getElementById('filter-status').value;
+  const cat = document.getElementById('filter-categoria').value;
   const loc = document.getElementById('filter-local').value;
   const sa  = document.getElementById('filter-sala').value;
   const filtered = notebooksDB.filter(n => {
     if (s && !n.id.toLowerCase().includes(s)) return false;
     if (st !== 'Todos' && n.status !== st) return false;
+    if (cat !== 'Todos' && n.tipo !== cat) return false;
     if (loc !== 'Todos') { if (n.status !== 'guardado' || n.local !== loc) return false; }
     if (sa !== 'Todos')  { if (n.status !== 'emprestado' || n.sala !== sa) return false; }
     return true;
@@ -420,17 +680,44 @@ function renderGrid(list) {
   const grid = document.getElementById('notebook-grid');
   grid.innerHTML = '';
 
-  // Stats
+  // Stats filtrados pela categoria selecionada
+  const selectedCat = document.getElementById('filter-categoria') ? document.getElementById('filter-categoria').value : 'Todos';
+  const statsList = selectedCat === 'Todos'
+    ? notebooksDB
+    : notebooksDB.filter(n => n.tipo === selectedCat);
+
   const count = { guardado:0, emprestado:0, cedido:0, reservado:0 };
-  notebooksDB.forEach(n => { if(count[n.status] !== undefined) count[n.status]++; });
+  statsList.forEach(n => { if(count[n.status] !== undefined) count[n.status]++; });
   
+  // Atualiza labels dos cards com o nome da categoria para ficar distinto
+  const labels = {
+    Todos: 'Total',
+    guardado: 'Disponíveis',
+    emprestado: 'Emprestados',
+    cedido: 'Cedidos',
+    reservado: 'Reservados'
+  };
+  
+  document.querySelectorAll('.status-summary .stat-item').forEach(item => {
+    const filterVal = item.dataset.filter; // "Todos", "guardado", "emprestado", "cedido", "reservado"
+    const lblEl = item.querySelector('.stat-lbl');
+    if (lblEl && filterVal) {
+      const baseText = labels[filterVal] || 'Status';
+      lblEl.textContent = selectedCat === 'Todos' ? baseText : `${baseText} (${selectedCat})`;
+    }
+
+    // Remove qualquer breakdown residual do design anterior
+    const existing = item.querySelector('.stat-breakdown');
+    if (existing) existing.remove();
+  });
+
   const elT = document.getElementById('stat-total');
   const elG = document.getElementById('stat-guardado');
   const elE = document.getElementById('stat-emprestado');
   const elC = document.getElementById('stat-cedido');
   const elR = document.getElementById('stat-reservado');
 
-  if(elT) elT.textContent = notebooksDB.length;
+  if(elT) elT.textContent = statsList.length;
   if(elG) elG.textContent = count.guardado;
   if(elE) elE.textContent = count.emprestado;
   if(elC) elC.textContent = count.cedido;
@@ -447,7 +734,9 @@ function renderGrid(list) {
   list.forEach(n => {
     const card = document.createElement('div');
     card.className = 'notebook-card';
+    card.dataset.id = n.id;
     card.style.borderTop = `4px solid var(--c-${n.status})`;
+    card.style.cursor = 'pointer';
 
     const updateStr = n.updatedAt ? new Date(n.updatedAt).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) + ', ' + new Date(n.updatedAt).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '---';
 
@@ -473,6 +762,7 @@ function renderGrid(list) {
           n.status === 'reservado'  ? `🔒 ${esc(n.observacao || 'Reservado')}` :
           `📦 ${esc(n.local || 'T.I.')}`
         }</span>
+        ${n.observacao && n.status !== 'reservado' ? `<div style="margin-top: 5px; font-size: 0.8rem; color: var(--text-muted); font-style: italic;">💬 ${esc(n.observacao)}</div>` : ''}
       </div>
 
       <div class="card-footer">

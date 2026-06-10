@@ -647,5 +647,41 @@ Para garantir que o front-end estático e a API servida em Node.js (funções se
 - Como testar: Acessar a rota `/fidelidade/validar.html?u=[uid]` e verificar se a logo azul da FATEC está ampliada no cabeçalho do card de status, se o indicador inicial de "Carregando..." está azul, e se não há textos de marca redundantes fora do card.
 - Como reverter: Reverter as edições efetuadas no arquivo `/fidelidade/validar.html`.
 
+### [2026-05-29] Melhorias de Categorização e Estatísticas por Categoria no Módulo de Empréstimos
+- Autor: Antigravity
+- Branch: main
+- Arquivos alterados:
+  - `/emprestimo/index.html` (Adicionado select de Categoria na barra de filtros superior; alterado o input de texto de tipo do item por um select com botão inline para adicionar novas categorias na hora)
+  - `/emprestimo/app.js` (Adicionado controle de persistência de categorias padrão e customizadas em localStorage; implementado carregamento dinâmico que lê o banco Firestore e importa categorias ativas existentes; adicionado suporte a filtragem do grid e dos cards de estatísticas superiores baseada na categoria selecionada; implementado atualizador de label que anexa o nome da categoria selecionada nos títulos dos cards; adicionado renderização dinâmica de listas de categorias internas [breakdowns] em cada card de status, com eventos de clique associados para filtrar por status e tipo simultaneamente)
+  - `/emprestimo/emprestimo.css` (Adicionado classes `.stat-breakdown`, `.breakdown-row`, `.breakdown-name` e `.breakdown-count` com transições hover e estilização de badges para visualização das categorias no interior dos cartões de estatísticas)
+- Tipo: Evolução de Usabilidade e Análise de Dados
+- Motivo: Com o suporte a múltiplos tipos de equipamentos (notebooks, projetores, etc.), o dashboard de empréstimos exibia números totais consolidados, dificultando saber exatamente a quantidade de cada equipamento por status. Havia a necessidade de cadastrar novas categorias sob demanda de forma rápida no modal e poder visualizar estatísticas distintas para cada equipamento na tela inicial, além de atalhos rápidos para listar subgrupos específicos.
+- Impacto: Análise distinta e rápida das quantidades de cada tipo de equipamento na tela inicial e facilitação no cadastro padronizado de novos equipamentos com categorias.
+- Como testar:
+  - Acessar `/emprestimo/index.html`.
+  - Clicar em "Cadastrar Item". Verificar se o campo "Tipo" agora é um select com opções: Notebook, Passador, Caixa de Som, Projetor.
+  - Clicar no botão "+" ao lado de tipo, digitar uma nova categoria (ex: Câmera), salvar e verificar se ela se torna a selecionada.
+  - No filtro de pesquisa, alterar "Categoria" de "Todos" para "Notebook" e verificar se as estatísticas superiores (Total, Disponíveis, etc.) são atualizadas apenas com dados de notebooks, e se as labels mudam para `Total (Notebook)`, `Disponíveis (Notebook)`, etc.
+  - Com o filtro geral em "Todos", verifique que cada card superior exibe sua respectiva lista de categorias com quantidades (ex: `Notebook: 10`, `Passador: 3` sob Disponíveis).
+  - Clique na linha "Passador" no card de "Disponíveis" e veja se o grid e os seletores de filtros mudam automaticamente para exibir apenas os passadores disponíveis.
+- Como reverter: Desfazer as edições nos arquivos `/emprestimo/index.html`, `/emprestimo/app.js` e `/emprestimo/emprestimo.css`.
+
+### [2026-05-29] Correção de Categorias Legadas, Visual Mobile do Toolbar e Cache-Busters (Empréstimos)
+- Autor: Antigravity
+- Branch: main
+- Arquivos alterados:
+  - `/emprestimo/index.html` (Adicionados e atualizados parâmetros cache-buster para `?v=3` nos links do CSS e do JS para forçar atualização no navegador)
+  - `/emprestimo/app.js` (Lógica de normalização em `loadNotebooks()` convertendo `"Outros"`, `"outro"`, `"notbooks"`, `"notbook"` e nulos para `"Notebook"`; higienizada a lista de categorias em `loadCategories()` excluindo `"Outros"`; simplificada a ativação de abas usando `data-category`)
+  - `/emprestimo/emprestimo.css` (Implementado layout empilhado verticalmente para a barra de buscas e o botão de cadastro no celular através de `flex-direction: column` no `.toolbar-top`, com botão "+ Cadastrar Item" ocupando a largura total (100% width) e ícone/texto perfeitamente centralizados)
+- Tipo: Ajuste de UI/UX Responsivo, Correção de Dados e Cache-Busting
+- Motivo: O usuário informou que o layout estava poluído e questionou a origem da categoria "Outros" (itens legados). Posteriormente, apontou que a barra de busca e o botão "+ Cadastrar Item" estavam sobrepostos e muito espremidos no layout móvel.
+- Impacto: Interface móvel e desktop perfeitamente consistentes. O botão de cadastro agora ocupa toda a largura em celulares de forma elegante e centralizada abaixo da barra de busca, sem sobreposições. Os dados legados são auto-corrigidos para "Notebook".
+- Como testar:
+  - Acessar o módulo de empréstimos em um dispositivo móvel. Confirmar que a barra de busca e o botão "Cadastrar Item" não se sobrepõem e que o botão ocupa toda a largura abaixo da busca.
+  - Verificar que a categoria "Outros" não consta mais nos filtros e abas.
+- Como reverter: Desfazer as edições nos arquivos `/emprestimo/index.html`, `/emprestimo/app.js` e `/emprestimo/emprestimo.css`.
+
+
+
 
 

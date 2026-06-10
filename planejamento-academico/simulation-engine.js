@@ -79,6 +79,32 @@ export class SimulationEngine {
     return !localConflict;
   }
 
+  countEadOnDay(classIds, weekday, localAllocations = []) {
+    let count = 0;
+
+    // Verificar no banco de dados global (outras turmas mistas ou alocações passadas)
+    this.existingEntries.forEach(entry => {
+      const entryType = entry.classType || 'presencial';
+      if (entryType === 'ead' && entry.weekday === weekday) {
+        const entryClassIds = entry.classIds || [entry.classId];
+        if (entryClassIds.some(id => classIds.includes(id))) {
+          count++;
+        }
+      }
+    });
+
+    // Verificar nas alocações locais desta simulação
+    localAllocations.forEach(alloc => {
+      const allocType = alloc.classType || 'presencial';
+      if (allocType === 'ead' && alloc.weekday === weekday) {
+        // targetClasses implicitly applies to all localAllocations for this simulation
+        count++;
+      }
+    });
+
+    return count;
+  }
+
   areClassesAvailable(classIds, weekday, periods, localAllocations = [], currentClassType = 'presencial') {
     // Aulas do tipo Carga Reservada não são bloqueantes (não ocupam slot do dia/período)
     const currentIsBlocking = currentClassType === 'presencial' || currentClassType === 'ead';
@@ -166,8 +192,25 @@ export class SimulationEngine {
     let weekdays = [1, 2, 3, 4, 5].sort(() => 0.5 - Math.random());
 
     for (const day of weekdays) {
-      // Validar se as turmas estão livres neste dia/períodos
-      if (!this.areClassesAvailable(classIds, day, lesson.periods, localAllocations, lesson.classType)) continue;
+      let availablePeriods = [...(lesson.periods || [1, 2])];
+      let isAvailable = false;
+
+      if (lesson.classType === 'ead') {
+        const eadCountOnDay = this.countEadOnDay(classIds, day, localAllocations);
+        if (eadCountOnDay >= 2) continue; // max 2 EADs per night
+
+        if (eadCountOnDay === 0) {
+           isAvailable = this.areClassesAvailable(classIds, day, [1, 2], localAllocations, lesson.classType);
+           availablePeriods = [1];
+        } else if (eadCountOnDay === 1) {
+           isAvailable = this.areClassesAvailable(classIds, day, [2], localAllocations, lesson.classType);
+           availablePeriods = [2];
+        }
+      } else {
+        isAvailable = this.areClassesAvailable(classIds, day, lesson.periods, localAllocations, lesson.classType);
+      }
+
+      if (!isAvailable) continue;
 
       // Penalidade de gargalo se o dia estiver sobrecarregado
       let bottleneckPenalty = 0;
@@ -177,17 +220,43 @@ export class SimulationEngine {
 
       // Lógica para EAD ou Carga Reservada
       if (lesson.classType !== 'presencial') {
-        let score = 20 + bottleneckPenalty; // Favorece EAD em dias cheios
-        if (score > maxScore) {
-          maxScore = score;
-          bestSlot = {
-            weekday: day,
-            roomId: null,
-            roomName: null,
-            score,
-            reasons: ["Aula não presencial ajuda a desafogar a instituição"],
-            warnings: bottleneckPenalty < 0 ? ["Dia com alta ocupação de salas"] : []
-          };
+        if (lesson.classType === 'ead') {
+          const eadCountOnDay = this.countEadOnDay(classIds, day, localAllocations);
+          
+          let eadGroupingBonus = 0;
+          if (eadCountOnDay === 1) {
+            // Tem exatamente 1 EAD na noite, damos um bônus para agrupar o 2º EAD na mesma noite
+            eadGroupingBonus = 50; 
+          }
+
+          let score = 20 + bottleneckPenalty + eadGroupingBonus; // Favorece EAD em dias cheios
+          if (score > maxScore) {
+            maxScore = score;
+            bestSlot = {
+              weekday: day,
+              roomId: null,
+              roomName: null,
+              score,
+              periods: availablePeriods,
+              reasons: eadCountOnDay === 1 ? ["Agrupamento de 2 disciplinas EAD na mesma noite (Otimização)"] : ["Aula não presencial ajuda a desafogar a instituição"],
+              warnings: bottleneckPenalty < 0 ? ["Dia com alta ocupação de salas"] : []
+            };
+          }
+        } else {
+          // Lógica para Carga Reservada
+          let score = 20 + bottleneckPenalty;
+          if (score > maxScore) {
+            maxScore = score;
+            bestSlot = {
+              weekday: day,
+              roomId: null,
+              roomName: null,
+              score,
+              periods: availablePeriods,
+              reasons: ["Carga reservada para professor"],
+              warnings: []
+            };
+          }
         }
         continue;
       }
@@ -232,6 +301,7 @@ export class SimulationEngine {
               roomId: room.id,
               roomName: room.name,
               score: Math.floor(currentScore),
+              periods: availablePeriods,
               reasons: evaluation.reasons,
               warnings: [...warnings, ...(bottleneckPenalty < 0 ? ["Dia com alta demanda de salas"] : [])]
             };
@@ -313,6 +383,7 @@ export class SimulationEngine {
         allocations.push({
           ...lesson,
           weekday: result.weekday,
+          periods: result.periods || lesson.periods,
           suggestedRoomId: result.roomId,
           suggestedRoomName: result.roomName,
           score: result.score,
