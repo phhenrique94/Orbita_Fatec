@@ -46,17 +46,17 @@ app.get('/api', (req, res) => {
 });
 
 // Importação das rotas
-const rotasEmprestimo = require('./rotas/emprestimos');
-const rotasUsuarios = require('./rotas/usuarios');
-const rotasEnsalamento = require('./rotas/ensalamento');
-const rotasMeuEspaco = require('./rotas/meu-espaco');
-const rotasCargaHoraria = require('./rotas/carga-horaria');
-const rotasEmpresas = require('./rotas/empresas');
-const rotasValidacao = require('./rotas/validacao');
-const rotasTurmas = require('./rotas/turmas');
-const rotasAvaliacoes = require('./rotas/avaliacoes');
-const rotasAgenda = require('./rotas/agenda');
-const rotasLocais = require('./rotas/locais');
+const rotasEmprestimo = require('../src/rotas/emprestimos');
+const rotasUsuarios = require('../src/rotas/usuarios');
+const rotasEnsalamento = require('../src/rotas/ensalamento');
+const rotasMeuEspaco = require('../src/rotas/meu-espaco');
+const rotasCargaHoraria = require('../src/rotas/carga-horaria');
+const rotasEmpresas = require('../src/rotas/empresas');
+const rotasValidacao = require('../src/rotas/validacao');
+const rotasTurmas = require('../src/rotas/turmas');
+const rotasAvaliacoes = require('../src/rotas/avaliacoes');
+const rotasAgenda = require('../src/rotas/agenda');
+const rotasLocais = require('../src/rotas/locais');
 
 app.use('/api/emprestimos', rotasEmprestimo);
 app.use('/api/usuarios', rotasUsuarios);
