@@ -5,11 +5,12 @@
 
 /* ---- Variáveis locais do módulo ---- */
 :root {
-  --ch-green:       #10b981;
-  --ch-green-glow:  rgba(16, 185, 129, 0.15);
-  --ch-green-border:rgba(16, 185, 129, 0.25);
-  --ch-orange:      #f97316;
-  --ch-orange-glow: rgba(249, 115, 22, 0.15);
+  --ch-blue:        #2563eb;
+  --ch-blue-glow:   rgba(37, 99, 235, 0.08);
+  --ch-blue-border: rgba(37, 99, 235, 0.25);
+  --ch-grey:        #475569;
+  --ch-grey-glow:   #e2e8f0;
+  --ch-grey-border: #cbd5e1;
   --ch-card:        var(--card-bg);
   --ch-card-hover:  #F8FAFC;
   --ch-border:      var(--border-color);
@@ -20,7 +21,7 @@
   /* Status cores */
   --status-aguardando: rgba(100, 116, 139, 0.6);
   --status-andamento:  #f59e0b;
-  --status-finalizado: #10b981;
+  --status-finalizado: #2563eb;
 }
 
 /* ---- Layout principal ---- */
@@ -66,12 +67,12 @@
 }
 .ch-tab:hover { color: var(--text-main); background: #F8FAFC; }
 .ch-tab.active {
-  background: var(--ch-green-glow);
-  color: var(--ch-green);
-  border: 1px solid var(--ch-green-border);
+  background: var(--ch-blue-glow);
+  color: var(--ch-blue);
+  border: 1px solid var(--ch-blue-border);
   font-weight: 600;
 }
-.ch-tab.active svg { stroke: var(--ch-green); }
+.ch-tab.active svg { stroke: var(--ch-blue); }
 
 /* ---- Seção (conteúdo de cada aba) ---- */
 .ch-section { animation: fadeUp 0.25s ease; }
@@ -119,7 +120,7 @@
   outline: none; transition: border-color 0.2s;
   font-family: var(--font-main);
 }
-.ch-input:focus, .ch-select:focus { border-color: var(--ch-green); }
+.ch-input:focus, .ch-select:focus { border-color: var(--ch-blue); }
 .ch-select option { background: #0d0d1a; color: white; }
 .ch-input::placeholder { color: var(--ch-muted); }
 
@@ -132,13 +133,13 @@
 .btn-action {
   display: inline-flex; align-items: center; gap: 0.5rem;
   padding: 0.75rem 1.25rem;
-  background: var(--ch-orange); color: white;
-  border: none; border-radius: var(--ch-radius-sm);
+  background: var(--ch-grey-glow); color: var(--ch-grey);
+  border: 1px solid var(--ch-grey-border); border-radius: var(--ch-radius-sm);
   font-weight: 600; font-size: 0.9rem; cursor: pointer;
   transition: all 0.2s; white-space: nowrap;
   font-family: var(--font-main);
 }
-.btn-action:hover { background: #ea6c0a; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(249,115,22,0.35); }
+.btn-action:hover { background: var(--ch-grey-border); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
 .btn-action:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .btn-secondary {
@@ -166,14 +167,14 @@
   transition: all 0.2s;
   animation: fadeUp 0.2s ease;
 }
-.func-card:hover { background: var(--ch-card-hover); border-color: var(--ch-green-border); }
+.func-card:hover { background: var(--ch-card-hover); border-color: var(--ch-blue-border); }
 
 .func-avatar {
   width: 44px; height: 44px; border-radius: 50%;
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 1.1rem; color: white;
-  flex-shrink: 0; box-shadow: 0 0 15px rgba(16,185,129,0.25);
+  flex-shrink: 0; box-shadow: 0 0 15px rgba(59, 130, 246, 0.25);
 }
 
 .func-info { flex: 1; min-width: 0; }
@@ -187,13 +188,13 @@
 }
 .func-badge-cargo   { color: #9d5ff5; background: rgba(157,95,245,0.1); border-color: rgba(157,95,245,0.25); }
 .func-badge-turno   { color: #60a5fa; background: rgba(96,165,250,0.1); border-color: rgba(96,165,250,0.25); }
-.func-badge-horas   { color: var(--ch-green); background: var(--ch-green-glow); border-color: var(--ch-green-border); }
+.func-badge-horas   { color: var(--ch-blue); background: var(--ch-blue-glow); border-color: var(--ch-blue-border); }
 
 .func-horas-extras {
   text-align: right; flex-shrink: 0;
   padding-right: 0.5rem;
 }
-.func-horas-valor  { font-size: 1.4rem; font-weight: 800; color: var(--ch-green); line-height: 1; }
+.func-horas-valor  { font-size: 1.4rem; font-weight: 800; color: var(--ch-blue); line-height: 1; }
 .func-horas-label  { font-size: 0.7rem; color: var(--ch-muted); display: block; margin-top: 2px; }
 
 .func-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
@@ -227,9 +228,9 @@
 }
 .modo-btn:hover { color: white; border-color: rgba(255,255,255,0.2); }
 .modo-btn.active {
-  background: var(--ch-orange-glow);
-  border-color: rgba(249,115,22,0.4);
-  color: var(--ch-orange);
+  background: var(--ch-grey-glow);
+  border-color: var(--ch-grey-border);
+  color: var(--ch-grey);
 }
 
 /* ---- Modo Evento ---- */
@@ -296,7 +297,7 @@
 .accordion-icon {
   color: var(--ch-muted); transition: transform 0.3s;
 }
-.evento-func-card.expanded .accordion-icon { transform: rotate(180deg); color: var(--ch-green); }
+.evento-func-card.expanded .accordion-icon { transform: rotate(180deg); color: var(--ch-blue); }
 
 .evento-func-shifts { padding: 0.75rem 1.15rem 1.15rem; display: flex; flex-direction: column; gap: 0.5rem; animation: slideDown 0.2s ease-out; }
 @keyframes slideDown {
@@ -323,7 +324,7 @@
 }
 .badge-aguardando { background: rgba(100,116,139,0.12); color: #94a3b8; }
 .badge-andamento  { background: rgba(245,158,11,0.15); color: #f59e0b; }
-.badge-finalizado { background: var(--ch-green-glow); color: var(--ch-green); }
+.badge-finalizado { background: var(--ch-blue-glow); color: var(--ch-blue); }
 
 .evento-func-btns {
   display: flex; gap: 0.4rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end;
@@ -336,8 +337,8 @@
   font-family: var(--font-main);
 }
 .btn-entrada {
-  background: rgba(16,185,129,0.15); color: var(--ch-green);
-  border: 1px solid var(--ch-green-border);
+  background: var(--ch-blue-glow); color: var(--ch-blue);
+  border: 1px solid var(--ch-blue-border);
 }
 .btn-entrada:hover:not(:disabled)  { background: rgba(16,185,129,0.25); }
 .btn-saida {
@@ -371,8 +372,8 @@
 
 .hist-resumo { margin-bottom: 1.5rem; }
 .resumo-card {
-  background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,4,10,0));
-  border: 1px solid var(--ch-green-border);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(5,4,10,0));
+  border: 1px solid var(--ch-blue-border);
   border-radius: var(--ch-radius);
   padding: 1.25rem 1.5rem;
   display: flex; align-items: center; gap: 1.5rem;
@@ -381,7 +382,7 @@
 .resumo-info { display: flex; align-items: center; gap: 0.85rem; flex: 1; }
 .resumo-avatar {
   width: 48px; height: 48px; border-radius: 50%;
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 1.2rem; color: white; flex-shrink: 0;
 }
@@ -390,7 +391,7 @@
 
 .resumo-stats { display: flex; gap: 2rem; flex-shrink: 0; }
 .resumo-stat  { text-align: center; }
-.resumo-stat-valor { font-size: 1.8rem; font-weight: 800; color: var(--ch-green); display: block; line-height: 1; }
+.resumo-stat-valor { font-size: 1.8rem; font-weight: 800; color: var(--ch-blue); display: block; line-height: 1; }
 .resumo-stat-label { font-size: 0.72rem; color: var(--ch-muted); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-top: 4px; }
 
 .hist-lista { display: flex; flex-direction: column; gap: 0.65rem; }
@@ -407,7 +408,7 @@
   border-radius: 6px; text-transform: uppercase; flex-shrink: 0;
 }
 .tipo-evento  { background: rgba(96,165,250,0.12); color: #60a5fa; border: 1px solid rgba(96,165,250,0.2); }
-.tipo-manual  { background: rgba(249,115,22,0.12); color: #f97316; border: 1px solid rgba(249,115,22,0.2); }
+.tipo-manual  { background: var(--ch-grey-glow); color: var(--ch-grey); border: 1px solid var(--ch-grey-border); }
 
 .hist-registro-info { flex: 1; min-width: 0; }
 .hist-registro-desc { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -417,14 +418,14 @@
   text-align: right; flex-shrink: 0;
 }
 .hist-horas-valor { font-size: 1.1rem; font-weight: 800; }
-.hist-horas-pos { color: var(--ch-green); }
+.hist-horas-pos { color: var(--ch-blue); }
 .hist-horas-neg { color: #f87171; }
 .hist-horas-label { font-size: 0.7rem; color: var(--ch-muted); display: block; }
 
 .hist-mes-header {
-  font-size: 0.75rem; font-weight: 800; color: var(--ch-green);
+  font-size: 0.75rem; font-weight: 800; color: var(--ch-blue);
   text-transform: uppercase; letter-spacing: 0.1em;
-  padding: 1.5rem 0 0.5rem; border-bottom: 1px solid rgba(16,185,129,0.15);
+  padding: 1.5rem 0 0.5rem; border-bottom: 1px solid rgba(37, 99, 235, 0.15);
   margin-bottom: 0.75rem;
 }
 
@@ -482,22 +483,22 @@
 .btn.btn-primary {
   display: inline-flex; align-items: center; gap: 0.5rem;
   padding: 0.8rem 1.5rem;
-  background: var(--ch-orange); color: white;
-  border: none; border-radius: 10px;
+  background: var(--ch-grey-glow); color: var(--ch-grey);
+  border: 1px solid var(--ch-grey-border); border-radius: 10px;
   font-weight: 700; text-decoration: none; cursor: pointer;
   transition: 0.2s;
 }
-.btn.btn-primary:hover { background: #ea6c0a; }
+.btn.btn-primary:hover { background: var(--ch-grey-border); }
 
 /* ---- Seletor Multi-Turno ---- */
 .turnos-grid { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
 .turno-bloco { border: 1px solid var(--ch-border); border-radius: var(--ch-radius-sm); overflow: hidden; transition: border-color 0.2s; }
-.turno-bloco.ativo { border-color: var(--ch-green-border); background: rgba(16,185,129,0.05); }
+.turno-bloco.ativo { border-color: var(--ch-blue-border); background: var(--ch-blue-glow); }
 .turno-toggle-label { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.9rem; cursor: pointer; user-select: none; }
 .turno-check { display: none; }
 .turno-toggle-box { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--ch-border); background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
 .turno-check-icon { opacity: 0; transition: opacity 0.15s; stroke: white; }
-.turno-bloco.ativo .turno-toggle-box { background: var(--ch-green); border-color: var(--ch-green); }
+.turno-bloco.ativo .turno-toggle-box { background: var(--ch-blue); border-color: var(--ch-blue); }
 .turno-bloco.ativo .turno-check-icon { opacity: 1; }
 .turno-emoji { font-size: 1.05rem; }
 .turno-nome  { font-weight: 600; font-size: 0.9rem; }
@@ -506,9 +507,9 @@
 .time-field { display: flex; flex-direction: column; gap: 0.3rem; }
 .time-label { font-size: 0.7rem; font-weight: 600; color: var(--ch-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .time-input { width: 108px; padding: 0.6rem 0.7rem; font-size: 0.88rem; }
-.turno-calc { height: 38px; min-width: 52px; padding: 0 0.6rem; background: rgba(16,185,129,0.12); border: 1px solid var(--ch-green-border); border-radius: var(--ch-radius-sm); color: var(--ch-green); font-weight: 700; font-size: 0.88rem; display: flex; align-items: center; justify-content: center; }
-.turno-total-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.65rem; padding: 0.55rem 0.8rem; background: rgba(16,185,129,0.07); border: 1px solid var(--ch-green-border); border-radius: var(--ch-radius-sm); font-size: 0.85rem; color: var(--ch-muted); }
-.turno-total-row strong { color: var(--ch-green); font-size: 0.98rem; }
+.turno-calc { height: 38px; min-width: 52px; padding: 0 0.6rem; background: var(--ch-blue-glow); border: 1px solid var(--ch-blue-border); border-radius: var(--ch-radius-sm); color: var(--ch-blue); font-weight: 700; font-size: 0.88rem; display: flex; align-items: center; justify-content: center; }
+.turno-total-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.65rem; padding: 0.55rem 0.8rem; background: rgba(37, 99, 235, 0.04); border: 1px solid var(--ch-blue-border); border-radius: var(--ch-radius-sm); font-size: 0.85rem; color: var(--ch-muted); }
+.turno-total-row strong { color: var(--ch-blue); font-size: 0.98rem; }
 
 /* ---- Tipos de Operação (Manual) ---- */
 .tipo-op-label { cursor: pointer; }
@@ -520,7 +521,7 @@
   transition: all 0.2s;
 }
 .tipo-op-label input:checked + .tipo-op-card.credito {
-  border-color: var(--ch-green); background: var(--ch-green-glow); color: var(--ch-green);
+  border-color: var(--ch-blue); background: var(--ch-blue-glow); color: var(--ch-blue);
 }
 .tipo-op-label input:checked + .tipo-op-card.debito {
   border-color: #f87171; background: rgba(248,113,113,0.1); color: #f87171;
@@ -540,7 +541,7 @@
 .evento-card-info { display: flex; align-items: center; gap: 1rem; }
 .evento-card-icon {
   width: 40px; height: 40px; border-radius: 10px;
-  background: var(--ch-green-glow); color: var(--ch-green);
+  background: var(--ch-blue-glow); color: var(--ch-blue);
   display: flex; align-items: center; justify-content: center;
 }
 .evento-card-nome { font-weight: 700; font-size: 1rem; }

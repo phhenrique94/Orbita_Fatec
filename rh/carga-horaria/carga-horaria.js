@@ -474,7 +474,7 @@ function renderEventoFuncLista() {
   }).join('');
 
   if (foraDoPeriodo) {
-    lista.insertAdjacentHTML('afterbegin', `<div class="alert-warning" style="margin-bottom:1rem; padding:0.8rem; background:rgba(249,115,22,0.1); border:1px solid var(--ch-orange); border-radius:8px; color:var(--ch-orange); text-align:center; font-size:0.85rem;">⚠️ Este evento está fora da data de vigência (${hoje < currentEventData.dataInicio ? 'Ainda não começou' : 'Já encerrou'}). Registros bloqueados.</div>`);
+    lista.insertAdjacentHTML('afterbegin', `<div class="alert-warning" style="margin-bottom:1rem; padding:0.8rem; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; color:#475569; text-align:center; font-size:0.85rem;">⚠️ Este evento está fora da data de vigência (${hoje < currentEventData.dataInicio ? 'Ainda não começou' : 'Já encerrou'}). Registros bloqueados.</div>`);
   }
 
   // Listeners de Acordeon
