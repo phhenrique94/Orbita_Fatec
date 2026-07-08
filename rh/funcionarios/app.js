@@ -340,11 +340,11 @@ function setupModalFuncionario() {
   // ---- Seletor de horário padrão ----
   const PRESETS = {
     manha_padrao:    [{ id: 'manha', entrada: '07:30', saida: '12:00' }],
-    tarde_padrao:    [{ id: 'tarde', entrada: '13:00', saida: '17:12' }],
+    tarde_padrao:    [{ id: 'tarde', entrada: '13:00', saida: '17:30' }],
     integral_padrao: [{ id: 'manha', entrada: '08:00', saida: '12:00' },
                       { id: 'tarde', entrada: '13:00', saida: '17:00' }],
     manha_tarde:     [{ id: 'manha', entrada: '07:30', saida: '12:00' },
-                      { id: 'tarde', entrada: '13:00', saida: '17:12' }],
+                      { id: 'tarde', entrada: '13:00', saida: '17:30' }],
     noite_padrao:    [{ id: 'noite', entrada: '18:30', saida: '22:30' }],
   };
 
