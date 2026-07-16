@@ -31,6 +31,15 @@ O sistema utiliza Role-Based Access Control (RBAC). Os cargos base definidos em 
 
 *Nota: No módulo de Usuários, o ADM N1 pode ajustar granularmente as permissões de "Ver" e "Executar" para cada cargo nos diferentes módulos.*
 
+### Nomenclatura: "Setor" na interface = cargo/role no código
+Na interface do módulo Usuários, os cargos são apresentados como **"Setor"** (cadastro de usuário, aba Setores, modo "Por Setor" da gerência de acessos). Internamente nada mudou: o campo continua sendo `role` no doc `users/{uid}`, as permissões continuam em `config/permissions` por role, e os ids (`adm_l1`, `adm_l2`, `ti`, `rh`, `visitante`, ...) permanecem. Não confundir com os **setores de funcionários** (`setores_rh`, módulo Funcionários), que são apenas organizacionais e não concedem acesso.
+
+### Permissões por usuário (override individual)
+Além das permissões por cargo, o ADM N1 pode conceder **acessos personalizados por usuário** (tela Usuários → Gerenciar Acessos → "Por Usuário"). O override é salvo no campo `permissoes` do doc `users/{uid}` (`{ modulo: nivel }`) e **sempre vence o cargo** — tanto para ampliar quanto para restringir. Módulos sem override herdam o nível do cargo. Níveis: 1 = Sem Acesso, 2 = Apenas Leitura, 3 = Acesso Total. Convenção visual: acesso herdado do cargo aparece em **azul**; acesso personalizado, em **laranja**. A gerência de acessos (globais e individuais) é exclusiva do `adm_l1` (imposto no backend).
+
+### ⚠️ REGRA OBRIGATÓRIA — Registro de módulos e tópicos novos
+`core/permissions.js` é a **fonte única** de módulos (`MODULES`) e tópicos/categorias (`CATEGORIES`). **Todo módulo novo criado DEVE ser registrado em `MODULES`** (com `id`, `category`, `title`, `icon`, `url`) e, se o tópico não existir, **registrado em `CATEGORIES`**. É esse registro que faz o módulo aparecer automaticamente no menu lateral E na tela de Gerência de Acessos (grade por cargo, por usuário e filtro por tópico) — não há mais listas paralelas hardcoded. Um módulo não registrado ali fica invisível para o sistema de permissões.
+
 ## 5. Módulos do sistema
 
 ### Meu Espaço (Antigo Dashboard)
@@ -105,6 +114,20 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 - Como reverter:
 
 ## 8. Histórico de alterações
+
+### [2026-07-16] Reforma da Gestão de Acessos (fonte única de módulos + permissões por usuário)
+- Autor: Equipe TI (com Claude Code)
+- Branch: main (fork Mtreck)
+- Arquivos alterados: `core/permissions.js`, `core/layout.js`, `src/middlewares/auth.js`, `src/rotas/usuarios.js`, `usuarios/app.js`, `usuarios/index.html`, `usuarios/usuarios.css`, guards de `emprestimo/`, `turmas/`, `avaliacoes/`, `empresas/`, `planejamento-academico/`, `rh/carga-horaria/`, `rh/funcionarios/`.
+- Tipo: Feature + Refactor + Segurança.
+- Motivo: A tela "Gerenciar Acessos" usava listas de módulos hardcoded e divergentes (Agenda e Funcionários nem apareciam) e não havia permissão individual por usuário.
+- Impacto:
+  - `core/permissions.js` virou a fonte única de módulos/tópicos (ver Regra Obrigatória na seção 4); a grade de acessos deriva dela, agrupada por tópico, com filtro por categoria e 4 módulos por linha.
+  - Novo override por usuário (`users/{uid}.permissoes`), aplicado no middleware do backend (vence o cargo) e refletido no menu lateral e nos guards das páginas (nível efetivo). Azul = herdado do cargo; laranja = personalizado.
+  - Novo endpoint `PUT /api/usuarios/:uid/permissoes` (só `adm_l1`); `PUT /config/permissions` agora também exige `adm_l1` (antes qualquer nível 3 em usuarios editava — brecha de escalada de privilégio).
+  - Cargo novo nasce sem acesso a nenhum módulo.
+- Como testar: como adm_l1, Usuários → Gerenciar Acessos → "Por Usuário": dar Acesso Total num módulo fora do cargo de um usuário de teste e conferir menu/página/API; dar "Sem Acesso" num módulo do cargo e conferir o bloqueio.
+- Como reverter: `git revert` do commit correspondente; remover campo `permissoes` dos docs `users` afetados.
 
 ### [2026-05-27] Criação do módulo de Turmas e Categoria Docência
 - Autor: Antigravity

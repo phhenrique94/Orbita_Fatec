@@ -114,3 +114,24 @@ export function hasPermission(role, moduleId) {
 export function getRoleConfig(role) {
   return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS["visitante"];
 }
+
+// Nível de acesso normalizado com retrocompatibilidade:
+// inteiro (1/2/3) ou formato legado { view, execute }
+export function getAccessLevel(perm) {
+  if (perm === undefined || perm === null) return 1;
+  if (typeof perm === "object") {
+    if (perm.execute) return 3;
+    if (perm.view) return 2;
+    return 1;
+  }
+  return parseInt(perm) || 1;
+}
+
+// Nível efetivo: o override individual do usuário (users/{uid}.permissoes)
+// sempre vence o nível do cargo quando definido para o módulo.
+export function getEffectiveLevel(rolePerms, userOverrides, moduleId) {
+  if (userOverrides && userOverrides[moduleId] !== undefined) {
+    return getAccessLevel(userOverrides[moduleId]);
+  }
+  return getAccessLevel(rolePerms ? rolePerms[moduleId] : undefined);
+}

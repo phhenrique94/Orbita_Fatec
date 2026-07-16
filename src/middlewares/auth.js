@@ -7,6 +7,18 @@ let permissionsCache = {
 };
 const CACHE_TTL = 60 * 1000; // 1 minuto de TTL
 
+// Nível de acesso normalizado com retrocompatibilidade:
+// inteiro (1/2/3) ou formato legado { view, execute }
+const getAccessLevel = (perm) => {
+    if (perm === undefined || perm === null) return 1;
+    if (typeof perm === 'object') {
+        if (perm.execute) return 3;
+        if (perm.view) return 2;
+        return 1;
+    }
+    return parseInt(perm) || 1;
+};
+
 const verifyToken = async (req, res, next) => {
     const bearerHeader = req.headers['authorization'];
 
@@ -23,8 +35,12 @@ const verifyToken = async (req, res, next) => {
         // 🚨 CAMADA DE SEGURANÇA EXTRA: Buscar o cargo real no Banco de Dados
         const { db } = require('../firebase');
         const userDoc = await db.collection('users').doc(req.user.uid).get();
-        req.user.role = userDoc.exists ? userDoc.data().role : 'visitante';
-        
+        const userData = userDoc.exists ? userDoc.data() : {};
+        req.user.role = userData.role || 'visitante';
+        // Permissões específicas do usuário (override por módulo) — sempre
+        // vencem as do cargo quando definidas
+        req.user.permissoes = userData.permissoes || null;
+
         next();
     } catch (error) {
         console.error('Erro ao verificar o token:', error);
@@ -49,6 +65,17 @@ const requireModulePermission = (moduleName) => {
         // GET requer nível >= 2 (visualização), outros métodos requerem nível >= 3 (execução)
         const requiredLevel = req.method === 'GET' ? 2 : 3;
 
+        // Override específico do usuário vence o cargo (para ampliar ou restringir)
+        if (req.user.permissoes && req.user.permissoes[moduleName] !== undefined) {
+            const userLevel = getAccessLevel(req.user.permissoes[moduleName]);
+            if (userLevel >= requiredLevel) {
+                return next();
+            }
+            return res.status(403).json({
+                error: `Acesso Negado. Você possui nível de acesso ${userLevel} (permissão individual) para o módulo ${moduleName}, mas o nível mínimo requerido é ${requiredLevel}.`
+            });
+        }
+
         // Tentar buscar as permissões do cache ou Firestore
         let perms = null;
         const now = Date.now();
@@ -67,17 +94,6 @@ const requireModulePermission = (moduleName) => {
                 console.error('Erro ao ler permissões dinâmicas do Firestore:', err);
             }
         }
-
-        // Função auxiliar para obter o nível de acesso normalizado com retrocompatibilidade
-        const getAccessLevel = (perm) => {
-            if (perm === undefined || perm === null) return 1;
-            if (typeof perm === 'object') {
-                if (perm.execute) return 3;
-                if (perm.view) return 2;
-                return 1;
-            }
-            return parseInt(perm) || 1;
-        };
 
         // Se encontrou as permissões no banco e estão configuradas para o cargo
         if (perms && perms[role] && perms[role][moduleName] !== undefined) {

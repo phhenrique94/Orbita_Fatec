@@ -1,7 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { db, auth } = require('../firebase');
+const { admin, db, auth } = require('../firebase');
 const verifyToken = require('../middlewares/auth');
+
+// Gerência de acessos (permissões globais e por usuário) é exclusiva do ADM N1
+const requireAdmL1 = (req, res, next) => {
+    if (req.user?.role !== 'adm_l1') {
+        return res.status(403).json({ error: 'Apenas o Administrador N1 pode gerenciar acessos.' });
+    }
+    next();
+};
 
 // ==========================================
 // USUÁRIOS (users)
@@ -100,6 +108,44 @@ router.put('/:uid/role', verifyToken, verifyToken.requireModulePermission('usuar
     }
 });
 
+// PUT /api/usuarios/:uid/permissoes - Permissões específicas do usuário
+// (override por módulo; sempre vencem as do cargo). Só ADM N1.
+router.put('/:uid/permissoes', verifyToken, requireAdmL1, async (req, res) => {
+    try {
+        const { permissoes } = req.body;
+        if (permissoes === undefined || permissoes === null || typeof permissoes !== 'object' || Array.isArray(permissoes)) {
+            return res.status(400).json({ error: 'permissoes deve ser um objeto { modulo: nivel }.' });
+        }
+
+        const entradas = Object.entries(permissoes);
+        for (const [mod, nivel] of entradas) {
+            if (typeof mod !== 'string' || !mod.trim()) {
+                return res.status(400).json({ error: 'Nome de módulo inválido.' });
+            }
+            if (![1, 2, 3].includes(Number(nivel))) {
+                return res.status(400).json({ error: `Nível inválido para "${mod}" — use 1 (Nenhum), 2 (Visualizar) ou 3 (Executar).` });
+            }
+        }
+
+        const docRef = db.collection('users').doc(req.params.uid);
+        const snap = await docRef.get();
+        if (!snap.exists) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+        if (!entradas.length) {
+            // Objeto vazio = restaurar padrão do cargo (remove o campo)
+            await docRef.update({ permissoes: admin.firestore.FieldValue.delete() });
+        } else {
+            const normalizado = {};
+            entradas.forEach(([mod, nivel]) => { normalizado[mod] = Number(nivel); });
+            await docRef.update({ permissoes: normalizado });
+        }
+
+        res.json({ message: 'Permissões do usuário atualizadas com sucesso!' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // PUT /api/usuarios/:uid/status
 router.put('/:uid/status', verifyToken, verifyToken.requireModulePermission('usuarios'), async (req, res) => {
     try {
@@ -166,7 +212,7 @@ router.get('/config/permissions', verifyToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.put('/config/permissions', verifyToken, verifyToken.requireModulePermission('usuarios'), async (req, res) => {
+router.put('/config/permissions', verifyToken, requireAdmL1, async (req, res) => {
     try {
         await db.collection('config').doc('permissions').set(req.body);
         res.json({ message: 'Permissões atualizadas com sucesso!' });

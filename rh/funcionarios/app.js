@@ -7,6 +7,7 @@ import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/fi
 import { firebaseConfig } from "../../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../../core/layout.js";
 import { escapeHTML as esc } from "../../core/security.js";
+import { getEffectiveLevel } from "../../core/permissions.js";
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -121,15 +122,28 @@ onAuthStateChanged(auth, async user => {
   try {
     const token = await user.getIdToken();
     const snap = await getDoc(doc(db, 'users', user.uid));
-    const role = snap.exists() ? (snap.data().role || 'visitante') : 'visitante';
-    const rolesPermitidos = ['adm_l1', 'adm_l2', 'rh'];
+    const me = snap.exists() ? snap.data() : {};
+    const role = me.role || 'visitante';
 
     setCachedAuth(user, role, token);
 
-    if (!rolesPermitidos.includes(role)) {
+    // Nível EFETIVO: override individual do usuário vence o do cargo
+    let nivel = 3;
+    if (role !== 'adm_l1') {
+      try {
+        const perms = await apiFetch('/usuarios/config/permissions');
+        nivel = getEffectiveLevel(perms[role] || {}, me.permissoes || null, 'funcionarios');
+      } catch (e) {
+        // Fallback: comportamento anterior por cargo
+        nivel = ['adm_l2', 'rh'].includes(role) ? 3 : 1;
+      }
+    }
+
+    if (nivel < 2) {
       document.getElementById('auth-guard').classList.remove('hidden');
       return;
     }
+    document.body.classList.toggle('hide-execute', role !== 'adm_l1' && nivel < 3);
 
     if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
       initApp(user, role);

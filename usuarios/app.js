@@ -32,6 +32,7 @@ import {
 import { firebaseConfig } from "../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../core/layout.js";
 import { escapeHTML as esc } from "../core/security.js";
+import { MODULES, CATEGORIES, getAccessLevel, getEffectiveLevel } from "../core/permissions.js";
 
 
 const fbApp    = initializeApp(firebaseConfig);
@@ -70,6 +71,14 @@ let allUsers    = [];
 let allRoles    = [];
 let globalPermissions = {}; // Carregado do Firestore (config/permissions)
 let activeRoleTab     = 'adm_l2';
+
+// Fonte ÚNICA de módulos: core/permissions.js (MODULES). Qualquer módulo novo
+// registrado lá para o menu lateral aparece automaticamente nesta tela.
+// dashboard e fidelidade ficam de fora (sempre liberados pelo layout).
+const PERM_MODULES = Object.values(MODULES).filter(m => !['dashboard', 'fidelidade'].includes(m.id));
+
+// Filtro de tópico/categoria ativo na grade de acessos
+let filtroCategoria = 'todos';
 
 // ---- Elements ----
 const authGuard    = document.getElementById('auth-guard');
@@ -117,23 +126,22 @@ onAuthStateChanged(auth, async (user) => {
 
   currentUser = user;
 
-  // Busca role e permissões do usuário
+  // Busca role e permissões (inclusive overrides individuais) do usuário
+  let meuOverrides = null;
   try {
     const userData = await apiFetch('/usuarios/me');
     currentRole = userData.role || 'visitante';
+    meuOverrides = userData.permissoes || null;
   } catch(e) {
     currentRole = cached ? cached.role : 'visitante';
   }
 
-  // BUSCA PERMISSÕES GLOBAIS
+  // Nível EFETIVO no módulo usuarios: override individual vence o cargo
   let userLevel = 1;
   try {
     const globalData = await apiFetch('/usuarios/config/permissions');
     const rolePerms = globalData[currentRole] || {};
-    const rawPerm = rolePerms['usuarios'];
-    userLevel = (rawPerm !== undefined && typeof rawPerm === 'object')
-      ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-      : (parseInt(rawPerm) || 1);
+    userLevel = getEffectiveLevel(rolePerms, meuOverrides, 'usuarios');
   } catch(e) {}
 
   const token = await user.getIdToken();
@@ -166,12 +174,24 @@ function initPage() {
   loadGlobalPermissions();
   setupModals();
   setupPermissionTabs();
+  setupPermissoesPorUsuario();
+  renderFiltroCategorias();
   searchInput.addEventListener('input', filterUsers);
   document.getElementById('search-roles')?.addEventListener('input', filterRoles);
   document.getElementById('btn-save-global-perms').addEventListener('click', saveGlobalPermissions);
   document.getElementById('btn-novo-cargo')?.addEventListener('click', abrirModalNovoCargo);
-  
+
   setupMainTabs();
+  aplicarGatingAdmL1();
+}
+
+// Gerência de acessos é exclusiva do ADM N1: esconde a aba para os demais
+function aplicarGatingAdmL1() {
+  if (currentRole === 'adm_l1') return;
+  const tabBtn = document.querySelector('.tab-btn[data-tab="cargos"]');
+  const tabContent = document.getElementById('tab-cargos');
+  if (tabBtn) tabBtn.style.display = 'none';
+  if (tabContent) { tabContent.classList.remove('active'); tabContent.style.display = 'none'; }
 }
 
 // ================================================================
@@ -267,22 +287,13 @@ function updateRoleSelects() {
     activeRoleTab = select.value;
   }
 
-  const roleIcons = {
-    adm_l1: '💎',
-    adm_l2: '🛡️',
-    ti: '🔧',
-    visitante: '👤',
-    rh: '👥',
-    default: '💼'
-  };
-
   const roleDescs = {
     adm_l1: 'Sênior/Dev',
     adm_l2: 'Setor/Chefia',
     ti: 'Suporte',
     visitante: 'Consulta',
     rh: 'Recursos Humanos',
-    default: 'Cargo Personalizado'
+    default: 'Setor Personalizado'
   };
 
   const renderRoleOption = (r, nameAttr) => {
@@ -293,7 +304,6 @@ function updateRoleSelects() {
       <label class="role-option">
         <input type="radio" name="${nameAttr}" value="${r.id}" required>
         <div class="role-card">
-          <span class="role-icon">${roleIcons[r.id] || roleIcons.default}</span>
           <strong>${esc(displayName)}</strong>
           <small>${esc(displayDesc)}</small>
         </div>
@@ -372,15 +382,50 @@ const ROLE_LABEL = {
   rh: 'RH'
 };
 
-const MODULES = [
-  { id: 'emprestimo',    name: 'Empréstimos',            icon: '📦' },
-  { id: 'usuarios',      name: 'Usuários',               icon: '👥' },
-  { id: 'ensalamento',   name: 'Planejamento Acadêmico', icon: '🏫' },
-  { id: 'carga-horaria', name: 'Carga Horária',          icon: '⏰' },
-  { id: 'empresas',      name: 'Parceiros',              icon: '🤝' },
-  { id: 'turmas',        name: 'Turmas',                 icon: '🎓' },
-  { id: 'avaliacoes',    name: 'Avaliações',             icon: '📝' }
-];
+// Agrupamento por categoria para a grade de acessos (respeita o filtro)
+function getModulosPorCategoria() {
+  const grupos = [];
+  if (filtroCategoria === 'todos' || filtroCategoria === 'geral') {
+    const semCategoria = PERM_MODULES.filter(m => !m.category);
+    if (semCategoria.length) grupos.push({ label: 'Geral', modulos: semCategoria });
+  }
+  Object.entries(CATEGORIES).forEach(([catKey, catLabel]) => {
+    if (filtroCategoria !== 'todos' && filtroCategoria !== catKey) return;
+    const mods = PERM_MODULES.filter(m => m.category === catKey);
+    if (mods.length) grupos.push({ label: catLabel, modulos: mods });
+  });
+  return grupos;
+}
+
+// Pills de filtro por tópico — derivadas de CATEGORIES (fonte única):
+// tópico novo registrado em core/permissions.js aparece aqui sozinho.
+function renderFiltroCategorias() {
+  const box = document.getElementById('perm-cat-filter');
+  if (!box) return;
+  const temGeral = PERM_MODULES.some(m => !m.category);
+  const opcoes = [['todos', 'Todos']];
+  if (temGeral) opcoes.push(['geral', 'Geral']);
+  Object.entries(CATEGORIES).forEach(([key, label]) => {
+    if (PERM_MODULES.some(m => m.category === key)) opcoes.push([key, label]);
+  });
+
+  box.innerHTML = opcoes.map(([key, label]) =>
+    `<button class="perm-cat-pill ${filtroCategoria === key ? 'active' : ''}" data-cat="${key}">${esc(label)}</button>`
+  ).join('');
+
+  box.querySelectorAll('.perm-cat-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      filtroCategoria = btn.dataset.cat;
+      renderFiltroCategorias();
+      rerenderGrades();
+    });
+  });
+}
+
+function rerenderGrades() {
+  renderPermissionsGrid('global-permissions-grid', globalPermissions[activeRoleTab] || {});
+  if (permUserSelecionado) renderPermissoesUsuario();
+}
 
 function renderUsers(list) {
   userCount.textContent = `${allUsers.length} usuário${allUsers.length !== 1 ? 's' : ''}`;
@@ -407,6 +452,7 @@ function renderUsers(list) {
         <div class="user-card-email">${esc(u.email || u.uid)}</div>
         <div class="user-card-meta">
           <span class="role-badge badge-${role}">${ROLE_LABEL[role] || role}</span>
+          ${u.permissoes && Object.keys(u.permissoes).length ? '<span class="perm-override-badge">Acessos personalizados</span>' : ''}
           <span class="user-card-date">Desde ${dateStr}</span>
           ${isSelf ? '<span class="user-card-date">· você</span>' : ''}
         </div>
@@ -434,6 +480,9 @@ function renderUsers(list) {
   userList.querySelectorAll('.delete-btn:not([disabled])').forEach(btn => {
     btn.addEventListener('click', () => confirmarDelete(btn.dataset.uid, btn.dataset.name));
   });
+
+  // Mantém o seletor do modo "Por Usuário" sincronizado com a lista
+  popularSelectPermUsuario();
 }
 
 // ================================================================
@@ -504,21 +553,15 @@ async function salvarNovoCargo(e) {
   try {
     await apiFetch('/usuarios/roles', { method: 'POST', body: JSON.stringify({ id, name: nome }) });
     
-    // Opcional: Atualizar permissões ao criar cargo (pode ser feito no backend, mas mantemos o padrão)
+    // Cargo novo nasce sem acesso a nenhum módulo (nível 1) — derivado da
+    // fonte única de módulos; o adm libera o que precisar na tela de acessos
     const perms = await apiFetch('/usuarios/config/permissions');
-    perms[id] = {
-      emprestimo: 2,
-      usuarios: 1,
-      ensalamento: 2,
-      'carga-horaria': 1,
-      empresas: 1,
-      turmas: 1,
-      avaliacoes: 1
-    };
+    perms[id] = {};
+    PERM_MODULES.forEach(m => { perms[id][m.id] = 1; });
     await apiFetch('/usuarios/config/permissions', { method: 'PUT', body: JSON.stringify(perms) });
 
     fecharModal('modal-cargo');
-    showToast(`✅ Cargo ${nome} criado!`, 'success');
+    showToast(`✅ Setor ${nome} criado!`, 'success');
   } catch (err) {
     errEl.textContent = err.message;
     errEl.classList.remove('hidden');
@@ -559,17 +602,7 @@ function abrirModalEditar(uid, name, role, email) {
 async function loadGlobalPermissions() {
   try {
     const data = await apiFetch('/usuarios/config/permissions');
-    if (Object.keys(data).length > 0) {
-      globalPermissions = data;
-    } else {
-      // Configuração inicial padrão
-      globalPermissions = {
-        adm_l2:    { emprestimo: 2, usuarios: 2, ensalamento: 2, 'carga-horaria': 3 },
-        ti:        { emprestimo: 3, usuarios: 1, ensalamento: 3, 'carga-horaria': 1 },
-        visitante: { emprestimo: 2, usuarios: 1, ensalamento: 2, 'carga-horaria': 1 },
-        rh:        { emprestimo: 1, usuarios: 1, ensalamento: 1, 'carga-horaria': 3 }
-      };
-    }
+    globalPermissions = data || {};
     renderPermissionsGrid('global-permissions-grid', globalPermissions[activeRoleTab] || {});
   } catch (err) {
     console.error("Erro ao carregar permissões:", err);
@@ -636,49 +669,175 @@ async function saveGlobalPermissions() {
   }
 }
 
-function renderPermissionsGrid(containerId, currentPerms) {
+const NIVEL_LABEL = { 1: 'Sem Acesso', 2: 'Apenas Leitura', 3: 'Acesso Total' };
+
+// Grade de permissões agrupada por categoria. Reutilizada pelos dois modos:
+// - Por Cargo: opções 1/2/3 (currentPerms = níveis do cargo).
+// - Por Usuário (opts.herdar): ganha a opção 0 "Herdar do cargo", que exibe
+//   o nível herdado; currentPerms = overrides do usuário, opts.rolePerms =
+//   níveis do cargo dele para calcular o herdado.
+function renderPermissionsGrid(containerId, currentPerms, opts = {}) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
 
-  MODULES.forEach(mod => {
-    // Normalização com retrocompatibilidade
-    let level = 1;
-    const rawPerm = currentPerms[mod.id];
-    if (rawPerm !== undefined) {
-      if (typeof rawPerm === 'object') {
-        if (rawPerm.execute) level = 3;
-        else if (rawPerm.view) level = 2;
-        else level = 1;
-      } else {
-        level = parseInt(rawPerm) || 1;
-      }
-    }
+  getModulosPorCategoria().forEach(grupo => {
+    const header = document.createElement('div');
+    header.className = 'perm-cat-header';
+    header.textContent = grupo.label;
+    container.appendChild(header);
 
-    const card = document.createElement('div');
-    card.className = `perm-card ${level > 1 ? 'active' : ''}`;
-    card.innerHTML = `
-      <div class="perm-card-title">${mod.icon} ${mod.name}</div>
-      <div class="perm-options" style="width: 100%;">
-        <select class="form-input perm-level-select" data-mod="${mod.id}" style="width: 100%; height: 40px; font-size: 0.85rem; padding: 0 0.5rem; background: var(--bg); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); cursor: pointer;">
-          <option value="1" ${level === 1 ? 'selected' : ''}>Nível 1 - Sem Acesso</option>
-          <option value="2" ${level === 2 ? 'selected' : ''}>Nível 2 - Apenas Leitura</option>
-          <option value="3" ${level === 3 ? 'selected' : ''}>Nível 3 - Acesso Total</option>
-        </select>
-      </div>
-    `;
+    const grid = document.createElement('div');
+    grid.className = 'module-permissions-grid';
 
-    const select = card.querySelector('.perm-level-select');
-    select.addEventListener('change', (e) => {
-      const val = parseInt(e.target.value);
-      if (val > 1) {
-        card.classList.add('active');
-      } else {
-        card.classList.remove('active');
-      }
+    grupo.modulos.forEach(mod => {
+      const temOverride = currentPerms && currentPerms[mod.id] !== undefined;
+      const level = temOverride ? getAccessLevel(currentPerms[mod.id]) : (opts.herdar ? 0 : 1);
+      const nivelHerdado = opts.herdar ? getAccessLevel(opts.rolePerms ? opts.rolePerms[mod.id] : undefined) : null;
+
+      const card = document.createElement('div');
+      const ativo = opts.herdar
+        ? (temOverride ? level > 1 : nivelHerdado > 1)
+        : level > 1;
+      card.className = `perm-card ${ativo ? 'active' : ''} ${opts.herdar && temOverride ? 'override' : ''}`;
+
+      const opcaoHerdar = opts.herdar
+        ? `<option value="0" ${!temOverride ? 'selected' : ''}>Herdar do setor (${NIVEL_LABEL[nivelHerdado]})</option>`
+        : '';
+
+      card.innerHTML = `
+        <div class="perm-card-title">${mod.icon} ${esc(mod.title)}</div>
+        <div class="perm-options" style="width: 100%;">
+          <select class="form-input perm-level-select" data-mod="${esc(mod.id)}" style="width: 100%; height: 40px; font-size: 0.85rem; padding: 0 0.5rem; background: var(--bg); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); cursor: pointer;">
+            ${opcaoHerdar}
+            <option value="1" ${temOverride && level === 1 ? 'selected' : (!opts.herdar && level === 1 ? 'selected' : '')}>Nível 1 - Sem Acesso</option>
+            <option value="2" ${level === 2 ? 'selected' : ''}>Nível 2 - Apenas Leitura</option>
+            <option value="3" ${level === 3 ? 'selected' : ''}>Nível 3 - Acesso Total</option>
+          </select>
+        </div>
+      `;
+
+      const select = card.querySelector('.perm-level-select');
+      select.addEventListener('change', (e) => {
+        const val = parseInt(e.target.value);
+        const efetivo = (opts.herdar && val === 0) ? nivelHerdado : val;
+        card.classList.toggle('active', efetivo > 1);
+        card.classList.toggle('override', opts.herdar && val !== 0);
+      });
+
+      grid.appendChild(card);
     });
 
-    container.appendChild(card);
+    container.appendChild(grid);
   });
+}
+
+// ================================================================
+//  PERMISSÕES POR USUÁRIO (override individual)
+// ================================================================
+let permUserSelecionado = null;
+
+function popularSelectPermUsuario() {
+  const sel = document.getElementById('perm-user-select');
+  if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">Selecione um usuário...</option>' +
+    allUsers.map(u =>
+      `<option value="${esc(u.uid)}">${esc(u.name || u.email || u.uid)}${u.permissoes && Object.keys(u.permissoes).length ? ' (personalizado)' : ''}</option>`
+    ).join('');
+  if (atual && allUsers.some(u => u.uid === atual)) sel.value = atual;
+}
+
+function setupPermissoesPorUsuario() {
+  // Pills de modo
+  document.querySelectorAll('.perm-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.perm-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const modo = btn.dataset.permMode;
+      document.getElementById('perms-modo-cargo').classList.toggle('hidden', modo !== 'cargo');
+      document.getElementById('perms-modo-usuario').classList.toggle('hidden', modo !== 'usuario');
+      if (modo === 'usuario') popularSelectPermUsuario();
+    });
+  });
+
+  document.getElementById('perm-user-select').addEventListener('change', e => {
+    const uid = e.target.value;
+    permUserSelecionado = allUsers.find(u => u.uid === uid) || null;
+    renderPermissoesUsuario();
+  });
+
+  document.getElementById('btn-save-user-perms').addEventListener('click', salvarPermissoesUsuario);
+  document.getElementById('btn-reset-user-perms').addEventListener('click', async () => {
+    if (!permUserSelecionado) return;
+    if (!confirm(`Restaurar o padrão do setor para ${permUserSelecionado.name || permUserSelecionado.email}?\n\nTodos os acessos personalizados serão removidos.`)) return;
+    await enviarPermissoesUsuario({});
+  });
+}
+
+function renderPermissoesUsuario() {
+  const info = document.getElementById('perm-user-info');
+  const wrapper = document.getElementById('user-permissions-wrapper');
+  const actions = document.getElementById('user-perms-actions');
+
+  if (!permUserSelecionado) {
+    info.classList.add('hidden');
+    wrapper.classList.add('hidden');
+    actions.classList.add('hidden');
+    return;
+  }
+
+  const u = permUserSelecionado;
+  const role = u.role || 'visitante';
+  const rolePerms = globalPermissions[role] || {};
+  const overrides = u.permissoes || {};
+  const qtdOverrides = Object.keys(overrides).length;
+
+  info.classList.remove('hidden');
+  info.innerHTML = `
+    <strong>${esc(u.name || u.email)}</strong> · setor <span class="role-badge badge-${esc(role)}">${ROLE_LABEL[role] || esc(role)}</span>
+    ${qtdOverrides ? `· <span class="perm-override-badge">${qtdOverrides} acesso(s) personalizado(s)</span>` : '· sem personalizações'}
+    <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.35rem;">"Herdar do setor" segue o que está definido no modo Por Setor. Qualquer outro valor vale só para este usuário e vence o cargo.</div>
+  `;
+
+  wrapper.classList.remove('hidden');
+  actions.classList.remove('hidden');
+  renderPermissionsGrid('user-permissions-grid', overrides, { herdar: true, rolePerms });
+}
+
+async function salvarPermissoesUsuario() {
+  if (!permUserSelecionado) return;
+  const permissoes = {};
+  document.querySelectorAll('#user-permissions-grid .perm-level-select').forEach(select => {
+    const val = parseInt(select.value);
+    if (val >= 1) permissoes[select.dataset.mod] = val; // 0 = herdar → não envia
+  });
+  await enviarPermissoesUsuario(permissoes);
+}
+
+async function enviarPermissoesUsuario(permissoes) {
+  const btn = document.getElementById('btn-save-user-perms');
+  btn.disabled = true;
+  try {
+    await apiFetch(`/usuarios/${permUserSelecionado.uid}/permissoes`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissoes })
+    });
+    // Atualiza estado local
+    const idx = allUsers.findIndex(u => u.uid === permUserSelecionado.uid);
+    if (idx >= 0) {
+      if (Object.keys(permissoes).length) allUsers[idx].permissoes = permissoes;
+      else delete allUsers[idx].permissoes;
+      permUserSelecionado = allUsers[idx];
+    }
+    showToast('✅ Permissões do usuário atualizadas!', 'success');
+    popularSelectPermUsuario();
+    renderPermissoesUsuario();
+    renderUsers(allUsers);
+  } catch (err) {
+    showToast('❌ Erro: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function abrirModal(id)  { document.getElementById(id).classList.add('active'); }

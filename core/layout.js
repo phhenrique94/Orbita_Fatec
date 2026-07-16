@@ -1,7 +1,7 @@
-import { MODULES, CATEGORIES, getRoleConfig, hasPermission } from './permissions.js';
+import { MODULES, CATEGORIES, getRoleConfig, hasPermission, getAccessLevel } from './permissions.js';
 
 export function setupLayout(user, role, activeModuleId, onLogout) {
-  // Carregar permissões dinâmicas salvas em cache no localStorage
+  // Carregar permissões EFETIVAS (cargo + overrides do usuário) do cache local
   const cachedPermsRaw = localStorage.getItem('orbita_permissions');
   let cachedPerms = null;
   if (cachedPermsRaw) {
@@ -10,25 +10,30 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
     } catch (e) {}
   }
 
-  // Redireciona imediatamente se o módulo de visualização foi desativado dinamicamente para o cargo do usuário
-  if (role !== 'adm_l1' && activeModuleId !== 'dashboard' && activeModuleId !== 'fidelidade' && cachedPerms) {
-    const rawPerm = cachedPerms[activeModuleId];
-    const userLevel = (rawPerm !== undefined && typeof rawPerm === 'object')
-      ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-      : (parseInt(rawPerm) || 1);
-    if (userLevel < 2) {
-      window.location.href = '/meu-espaco/index.html';
+  // Guard de acesso à página: com cache, decide pelo nível efetivo;
+  // sem cache, cai na lista estática do cargo (primeiro load)
+  if (role !== 'adm_l1' && activeModuleId !== 'dashboard' && activeModuleId !== 'fidelidade') {
+    if (cachedPerms) {
+      if (getAccessLevel(cachedPerms[activeModuleId]) < 2) {
+        window.location.href = '/meu-espaco/index.html';
+        return;
+      }
+    } else if (!hasPermission(role, activeModuleId)) {
+      window.location.href = '/index.html';
       return;
     }
   }
 
-  // Validar permissão estática base
-  if (activeModuleId !== 'dashboard' && !hasPermission(role, activeModuleId)) {
-    window.location.href = '/index.html';
-    return;
-  }
-
   const roleConfig = getRoleConfig(role);
+
+  // Visibilidade de módulo no menu: nível efetivo >= 2 quando há cache;
+  // sem cache, fallback para a lista estática do cargo
+  const podeVerModulo = (modId) => {
+    if (role === 'adm_l1') return true;
+    if (modId === 'dashboard' || modId === 'fidelidade') return true;
+    if (cachedPerms) return getAccessLevel(cachedPerms[modId]) >= 2;
+    return roleConfig.modules.includes(modId);
+  };
   const name = user.displayName || user.email.split('@')[0];
   const initial = name.charAt(0).toUpperCase();
 
@@ -65,21 +70,8 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
   nav.className = 'layout-nav';
   
   // 1. Renderizar Módulos sem Categoria (Top-level)
-  const topLevelModules = Object.values(MODULES).filter(mod => {
-    if (!mod.category && roleConfig.modules.includes(mod.id)) {
-      if (role === 'adm_l1') return true;
-      if (mod.id === 'dashboard' || mod.id === 'fidelidade') return true;
-      if (cachedPerms) {
-        const rawPerm = cachedPerms[mod.id];
-        const userLevel = (rawPerm !== undefined && typeof rawPerm === 'object')
-          ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-          : (parseInt(rawPerm) || 1);
-        if (userLevel < 2) return false;
-      }
-      return true;
-    }
-    return false;
-  });
+  const topLevelModules = Object.values(MODULES).filter(mod =>
+    !mod.category && podeVerModulo(mod.id));
 
   topLevelModules.forEach(mod => {
     const link = document.createElement('a');
@@ -92,21 +84,8 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
   // 2. Renderizar por Categorias
   Object.entries(CATEGORIES).forEach(([catKey, catLabel]) => {
     // Filtrar módulos desta categoria que o usuário tem permissão
-    const permittedInCat = Object.values(MODULES).filter(mod => {
-      if (mod.category === catKey && roleConfig.modules.includes(mod.id)) {
-        if (role === 'adm_l1') return true;
-        if (mod.id === 'dashboard' || mod.id === 'fidelidade') return true;
-        if (cachedPerms) {
-          const rawPerm = cachedPerms[mod.id];
-          const userLevel = (rawPerm !== undefined && typeof rawPerm === 'object')
-            ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-            : (parseInt(rawPerm) || 1);
-          if (userLevel < 2) return false;
-        }
-        return true;
-      }
-      return false;
-    });
+    const permittedInCat = Object.values(MODULES).filter(mod =>
+      mod.category === catKey && podeVerModulo(mod.id));
 
     if (permittedInCat.length > 0) {
       const catWrapper = document.createElement('div');
@@ -265,57 +244,44 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
     });
   }
 
-  // Atualizar permissões em segundo plano e cachear
+  // Atualizar permissões EFETIVAS em segundo plano e cachear:
+  // nível do cargo (config/permissions) mesclado com os overrides
+  // individuais do usuário (users/{uid}.permissoes) — override vence.
   const token = localStorage.getItem('orbita_token');
-  if (token && role !== 'adm_l1') {
-    const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
-      ? `http://${window.location.hostname}:3000/api` 
-      : '/api';
+  const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.'))
+    ? `http://${window.location.hostname}:3000/api`
+    : '/api';
 
-    fetch(`${API_BASE}/usuarios/config/permissions`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    .then(res => {
-      if (res.ok) return res.json();
-      throw new Error();
-    })
-    .then(allPerms => {
-      const rolePerms = allPerms[role] || {};
-      localStorage.setItem('orbita_permissions', JSON.stringify(rolePerms));
-      
-      // Se as permissões mudaram e a visualização do módulo ativo atual foi desativada, redireciona
-      if (activeModuleId !== 'dashboard' && activeModuleId !== 'fidelidade') {
-        const rawPerm = rolePerms[activeModuleId];
-        const userLevel = (rawPerm !== undefined && typeof rawPerm === 'object')
-          ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-          : (parseInt(rawPerm) || 1);
-        if (userLevel < 2) {
-          window.location.href = '/meu-espaco/index.html';
-        }
-      }
-    })
-    .catch(() => {});
-  }
-
-  // Primeiro acesso check para todos os cargos
   if (token) {
-    const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
-      ? `http://${window.location.hostname}:3000/api` 
-      : '/api';
+    const authHeaders = { 'Authorization': `Bearer ${token}` };
+    const fetchJson = (url) => fetch(url, { headers: authHeaders })
+      .then(res => { if (res.ok) return res.json(); throw new Error(); });
 
-    fetch(`${API_BASE}/usuarios/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    .then(res => {
-      if (res.ok) return res.json();
-      throw new Error();
-    })
-    .then(userData => {
-      if (userData && userData.primeiroAcesso === true) {
-        showFirstAccessModal(token, API_BASE);
-      }
-    })
-    .catch(() => {});
+    const promMe = fetchJson(`${API_BASE}/usuarios/me`);
+    const promPerms = role !== 'adm_l1'
+      ? fetchJson(`${API_BASE}/usuarios/config/permissions`)
+      : Promise.resolve(null);
+
+    Promise.all([promMe, promPerms])
+      .then(([userData, allPerms]) => {
+        if (userData && userData.primeiroAcesso === true) {
+          showFirstAccessModal(token, API_BASE);
+        }
+
+        if (role !== 'adm_l1' && allPerms) {
+          const rolePerms = allPerms[role] || {};
+          const efetivas = { ...rolePerms, ...(userData?.permissoes || {}) };
+          localStorage.setItem('orbita_permissions', JSON.stringify(efetivas));
+
+          // Se a visualização do módulo ativo foi desativada, redireciona
+          if (activeModuleId !== 'dashboard' && activeModuleId !== 'fidelidade') {
+            if (getAccessLevel(efetivas[activeModuleId]) < 2) {
+              window.location.href = '/meu-espaco/index.html';
+            }
+          }
+        }
+      })
+      .catch(() => {});
   }
 
   // Remover auth-guard e mostrar app
