@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebas
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 import { firebaseConfig } from "../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from '../core/layout.js';
+import { getEffectiveLevel } from '../core/permissions.js';
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -52,19 +53,32 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const token = await user.getIdToken();
     let role = 'visitante';
+    let meuOverrides = null;
     try {
       const userData = await apiFetch('/usuarios/me');
       role = userData.role || 'visitante';
+      meuOverrides = userData.permissoes || null;
     } catch (err) {
       role = cached ? cached.role : 'visitante';
     }
 
     setCachedAuth(user, role, token);
 
-    // Apenas ADM N1 e ADM N2 podem acessar Empresas por enquanto
-    if (role !== 'adm_l1' && role !== 'adm_l2') {
-      window.location.href = '../meu-espaco/index.html';
-      return;
+    // Nível EFETIVO: override individual do usuário vence o do cargo
+    let userLevel = 3;
+    if (role !== 'adm_l1') {
+      try {
+        const perms = await apiFetch('/usuarios/config/permissions');
+        userLevel = getEffectiveLevel(perms[role] || {}, meuOverrides, 'empresas');
+      } catch (e) {
+        // Fallback: comportamento anterior (só ADM N1/N2)
+        userLevel = role === 'adm_l2' ? 3 : 1;
+      }
+      if (userLevel < 2) {
+        window.location.href = '../meu-espaco/index.html';
+        return;
+      }
+      document.body.classList.toggle('hide-execute', userLevel < 3);
     }
 
     if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {

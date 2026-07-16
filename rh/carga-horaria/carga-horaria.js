@@ -1,18 +1,19 @@
 // ================================================================
 //  ÓRBITA — MÓDULO CARGA HORÁRIA (RH)
-//  Abas: Funcionários | Lançar Horas | Histórico
+//  Tela única: Lançar Horário · Recessos & Feriados · Extrato
 // ================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 import { firebaseConfig } from "../../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../../core/layout.js";
 import { escapeHTML as esc } from "../../core/security.js";
+import { getEffectiveLevel } from "../../core/permissions.js";
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.')) 
-  ? `http://${window.location.hostname}:3000/api` 
+const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.') || window.location.hostname.startsWith('10.'))
+  ? `http://${window.location.hostname}:3000/api`
   : '/api';
 
 async function apiFetch(endpoint, options = {}) {
@@ -28,96 +29,25 @@ async function apiFetch(endpoint, options = {}) {
     ...(options.headers || {})
   };
   const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
-  if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+  if (!res.ok) {
+    let msg = `Erro na API: ${res.status}`;
+    try { msg = (await res.json()).error || msg; } catch (_) {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 
-// ==========================================
-// FIRESTORE MOCK ADAPTER (MIGRAÇÃO REST)
-// ==========================================
-const db = {};
-const doc = (d, col, id) => `${col}/${id}`;
-const collection = (d, col) => col;
-const getDoc = async (path) => {
-    if (path.startsWith('users/')) {
-        const user = await apiFetch('/usuarios/me');
-        return { exists: () => true, data: () => user };
-    }
-    const [col, id] = path.split('/');
-    const data = await apiFetch(`/carga-horaria/${col}/${id}`);
-    return { exists: () => !!data, data: () => data, id };
-};
-
-const query = (col, ...args) => {
-    const qParams = new URLSearchParams();
-    args.forEach(a => {
-        if (a.type === 'where') qParams.append(a.field, a.val);
-    });
-    return `${col}?${qParams.toString()}`;
-};
-const where = (field, op, val) => ({ type: 'where', field, val });
-const orderBy = (field, dir) => ({ type: 'orderBy', field, dir });
-
-const getDocs = async (path) => {
-    const data = await apiFetch(`/carga-horaria/${path}`);
-    return { docs: data.map(d => ({
-        id: d.id, 
-        data: () => {
-            const cloned = {...d};
-            if (cloned.entrada) cloned.entrada = { toDate: () => new Date(cloned.entrada) };
-            if (cloned.saida) cloned.saida = { toDate: () => new Date(cloned.saida) };
-            if (cloned.criadoEm) cloned.criadoEm = { toDate: () => new Date(cloned.criadoEm) };
-            if (cloned.lancadoEm) cloned.lancadoEm = { toDate: () => new Date(cloned.lancadoEm) };
-            return cloned;
-        }
-    }))};
-};
-
-const addDoc = async (col, data) => {
-    const cleanData = {...data};
-    if (cleanData.entrada?.toDate) cleanData.entrada = cleanData.entrada.toDate().toISOString();
-    if (cleanData.saida?.toDate) cleanData.saida = cleanData.saida.toDate().toISOString();
-    const res = await apiFetch(`/carga-horaria/${col}`, { method: 'POST', body: JSON.stringify(cleanData) });
-    return { id: res.id };
-};
-
-const updateDoc = async (path, data) => {
-    const [col, id] = path.split('/');
-    const cleanData = {...data};
-    if (cleanData.entrada?.toDate) cleanData.entrada = cleanData.entrada.toDate().toISOString();
-    if (cleanData.saida?.toDate) cleanData.saida = cleanData.saida.toDate().toISOString();
-    await apiFetch(`/carga-horaria/${col}/${id}`, { method: 'PUT', body: JSON.stringify(cleanData) });
-};
-
-const deleteDoc = async (path) => {
-    const [col, id] = path.split('/');
-    await apiFetch(`/carga-horaria/${col}/${id}`, { method: 'DELETE' });
-};
-
-const serverTimestamp = () => 'TIMESTAMP';
-const Timestamp = { fromDate: (date) => ({ toDate: () => date }) };
-
-const onSnapshot = (path, callback) => {
-    const fetchIt = () => getDocs(path).then(callback).catch(()=>{});
-    fetchIt();
-    const interval = setInterval(() => {
-        if (!document.hidden) fetchIt();
-    }, 120000);
-    return () => clearInterval(interval);
-};
-
 // ---- Estado global ----
-let currentUser     = null;
-let allFuncionarios = [];       // cache dos funcionários
-let eventoState     = {};       // { [funcId]: { docId, status, entrada } }
-let currentEventId  = null;     // ID do evento sendo visualizado
-let currentEventData = null;    // Objeto com dados do evento (datas, etc)
-let histFuncAtual   = null;     // funcionário selecionado no histórico
-
-const TURNO_LABEL = { manha:'Manhã', tarde:'Tarde', noite:'Noite', integral:'Integral' };
+let currentUser      = null;
+let allFuncionarios  = [];
+let funcionarioAtual = null;   // funcionário selecionado no extrato
+let extratoRegistros = [];
+let recessos         = [];
+let recessoParaExcluir = null;
 
 let appInitialized = false;
 let initializedRole = null;
+let uiInicializada = false;
 
 // Check cache immediately
 const cached = getCachedAuth();
@@ -136,22 +66,34 @@ onAuthStateChanged(auth, async user => {
 
   try {
     const token = await user.getIdToken();
-    const snap = await getDoc(doc(db, 'users', user.uid));
-    const role = snap.exists() ? (snap.data().role || 'visitante') : 'visitante';
-    const rolesPermitidos = ['adm_l1', 'adm_l2', 'rh'];
+    const me = await apiFetch('/usuarios/me');
+    const role = me?.role || 'visitante';
 
     setCachedAuth(user, role, token);
 
-    if (!rolesPermitidos.includes(role)) {
+    // Nível EFETIVO: override individual do usuário vence o do cargo
+    let nivel = 3;
+    if (role !== 'adm_l1') {
+      try {
+        const perms = await apiFetch('/usuarios/config/permissions');
+        nivel = getEffectiveLevel(perms[role] || {}, me?.permissoes || null, 'carga-horaria');
+      } catch (e) {
+        // Fallback: comportamento anterior por cargo
+        nivel = ['adm_l2', 'rh'].includes(role) ? 3 : 1;
+      }
+    }
+
+    if (nivel < 2) {
       document.getElementById('auth-guard').classList.remove('hidden');
       return;
     }
+    document.body.classList.toggle('hide-execute', role !== 'adm_l1' && nivel < 3);
 
     if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
       initApp(user, role);
     }
 
-  } catch(e) {
+  } catch (e) {
     console.error("Erro na revalidação de auth:", e);
     if (!appInitialized) {
       document.getElementById('auth-guard').classList.remove('hidden');
@@ -164,7 +106,6 @@ async function initApp(user, role) {
   appInitialized = true;
   initializedRole = role;
 
-  // Inicializar o layout
   setupLayout(user, role, 'carga-horaria', async () => {
     clearCachedAuth();
     await signOut(auth);
@@ -175,459 +116,282 @@ async function initApp(user, role) {
   inicializar();
 }
 
-// (Logout is now handled by layout.js)
-
 // ================================================================
 //  INICIALIZAÇÃO
 // ================================================================
 function inicializar() {
-  setupTabs();
+  // Evita registrar listeners duas vezes (causava lançamentos duplicados)
+  if (uiInicializada) return;
+  uiInicializada = true;
+  setupFormPonto();
+  setupRecessos();
+  setupExtrato();
   carregarFuncionarios();
-  setupModoLancar();
-  setupFormManual();
-  setupHistorico();
+  carregarRecessos();
 }
 
 // ================================================================
-//  ABAS
+//  DADOS
 // ================================================================
-function setupTabs() {
-  document.querySelectorAll('.ch-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.ch-tab').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.ch-section').forEach(s => s.classList.add('hidden'));
-      btn.classList.add('active');
-      const secId = 'tab-' + btn.dataset.tab;
-      document.getElementById(secId).classList.remove('hidden');
-      // Ao abrir histórico, popula o select
-      if (btn.dataset.tab === 'historico') popularSelectHistorico();
-      // Ao abrir lançar, popula o select do manual
-      if (btn.dataset.tab === 'lancar') popularDatalistManual();
-    });
-  });
+async function carregarFuncionarios() {
+  try {
+    const data = await apiFetch('/carga-horaria/funcionarios_rh');
+    allFuncionarios = data.filter(f => f.ativo !== false);
+    popularSelectFuncionarios();
+    renderStats();
+    // Se já havia um funcionário selecionado, atualiza o extrato
+    if (funcionarioAtual) {
+      const atualizado = allFuncionarios.find(f => f.id === funcionarioAtual.id);
+      if (atualizado) funcionarioAtual = atualizado;
+    }
+  } catch (err) {
+    showToast('❌ Erro ao carregar funcionários: ' + err.message, 'error');
+  }
+}
+
+async function carregarRecessos() {
+  try {
+    recessos = await apiFetch('/carga-horaria/custom/recessos');
+    renderRecessos();
+    renderStats();
+  } catch (err) {
+    document.getElementById('lista-recessos').innerHTML =
+      `<div class="ch-empty"><p>Erro ao carregar recessos.</p></div>`;
+  }
 }
 
 // ================================================================
-//  ABA 1 — FUNCIONÁRIOS
+//  STATS
 // ================================================================
-function carregarFuncionarios() {
-  const colRef = collection(db, 'funcionarios_rh');
-  onSnapshot(query(colRef, orderBy('nome')), snap => {
-    allFuncionarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    popularDatalistManual();
-    popularSelectHistorico();
-  });
+function renderStats() {
+  const total = allFuncionarios.length;
+  const pos = allFuncionarios.filter(f => (Number(f.totalHorasExtras) || 0) > 0).length;
+  const neg = allFuncionarios.filter(f => (Number(f.totalHorasExtras) || 0) < 0).length;
+
+  document.getElementById('stat-total-func').textContent = total;
+  document.getElementById('stat-saldo-pos').textContent  = pos;
+  document.getElementById('stat-saldo-neg').textContent  = neg;
+  document.getElementById('stat-recessos').textContent   = recessos.length;
 }
 
 // ================================================================
-//  ABA 2 — LANÇAR HORAS
+//  LANÇAR HORÁRIO
 // ================================================================
-function setupModoLancar() {
-  // Tabs internas
-  document.querySelectorAll('.modo-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.modo-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const modo = btn.dataset.modo;
-      document.getElementById('modo-evento').classList.toggle('hidden', modo !== 'evento');
-      document.getElementById('modo-manual').classList.toggle('hidden', modo !== 'manual');
-      if (modo === 'evento') carregarEventosAtivos();
-    });
-  });
-
-  // Eventos: Lista
-  document.getElementById('btn-criar-evento').addEventListener('click', criarNovoEvento);
-  document.getElementById('novo-nome-evento').addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); criarNovoEvento(); }
-  });
-
-  // Eventos: Detalhe
-  document.getElementById('btn-voltar-lista').addEventListener('click', () => {
-    document.getElementById('evento-lista-container').classList.remove('hidden');
-    document.getElementById('evento-detalhe-container').classList.add('hidden');
-    currentEventId = null;
-    currentEventData = null;
-  });
-
-  document.getElementById('btn-excluir-evento-atual').addEventListener('click', excluirEventoAtual);
-
-  carregarEventosAtivos();
+function popularSelectFuncionarios() {
+  const sel = document.getElementById('func-select');
+  const selecionado = sel.value;
+  sel.innerHTML = '<option value="">Selecione um funcionário...</option>' +
+    allFuncionarios.map(f => `<option value="${esc(f.id)}">${esc(f.nome)}</option>`).join('');
+  if (selecionado && allFuncionarios.some(f => f.id === selecionado)) sel.value = selecionado;
 }
 
-// ---- Gestão da Lista de Eventos ----
-function carregarEventosAtivos() {
-  const colRef = collection(db, 'eventos_rh');
-  onSnapshot(query(colRef, orderBy('criadoEm', 'desc')), snap => {
-    const eventos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderListaEventos(eventos);
-  });
+const TURNO_LABEL = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' };
+
+function getFuncSelecionado() {
+  const id = document.getElementById('func-select').value;
+  return allFuncionarios.find(f => f.id === id) || null;
 }
 
-function renderListaEventos(eventos) {
-  const el = document.getElementById('lista-eventos-ativos');
-  if (!eventos.length) {
-    el.innerHTML = `
-      <div class="ch-empty">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        <p>Nenhum evento ativo. Crie um acima para começar.</p>
-      </div>`;
+// Ordem canônica dos turnos e turnos cadastrados do funcionário
+const ORDEM_TURNOS = ['manha', 'tarde', 'noite'];
+
+function getTurnosCadastrados(func) {
+  return ((func && Array.isArray(func.turnos)) ? func.turnos : [])
+    .filter(t => ORDEM_TURNOS.includes(t.id))
+    .sort((a, b) => ORDEM_TURNOS.indexOf(a.id) - ORDEM_TURNOS.indexOf(b.id));
+}
+
+function popularTurnosCheck() {
+  const box = document.getElementById('turnos-check');
+  const func = getFuncSelecionado();
+  if (!func) {
+    box.innerHTML = '<span class="ch-turnos-vazio">Selecione um funcionário para ver os turnos.</span>';
+    return;
+  }
+  box.innerHTML = ORDEM_TURNOS.map(id => `
+      <label class="ch-turno-check-label">
+        <input type="checkbox" name="turno-check" value="${id}">
+        <div class="ch-turno-check-card">${TURNO_LABEL[id]}</div>
+      </label>`).join('');
+
+  box.querySelectorAll('input[name="turno-check"]').forEach(cb =>
+    cb.addEventListener('change', atualizarPreviewPonto));
+  atualizarPreviewPonto();
+}
+
+function getTurnosMarcados() {
+  return [...document.querySelectorAll('input[name="turno-check"]:checked')].map(cb => cb.value);
+}
+
+function calcHorasIntervalo(entrada, saida) {
+  if (!/^\d{2}:\d{2}$/.test(entrada) || !/^\d{2}:\d{2}$/.test(saida)) return null;
+  const [eh, em] = entrada.split(':').map(Number);
+  const [sh, sm] = saida.split(':').map(Number);
+  let diff = (sh * 60 + sm) - (eh * 60 + em);
+  if (diff <= 0) diff += 24 * 60;
+  return Math.round(diff / 60 * 100) / 100;
+}
+
+// Diferença simples entre dois horários (sem virada de dia), em horas
+function diffSimplesHoras(a, b) {
+  const [ah, am] = a.split(':').map(Number);
+  const [bh, bm] = b.split(':').map(Number);
+  return Math.round(Math.abs((bh * 60 + bm) - (ah * 60 + am)) / 60 * 100) / 100;
+}
+
+// Espelha a regra do backend:
+// - Turnos marcados = atalho de turno inteiro (sem horário junto).
+// - Entrada E saída = período inteiro conta.
+// - Só saída = diferença vs saída padrão do fim do expediente.
+// - Só entrada = diferença vs entrada padrão do início do expediente.
+function calcularLancamento() {
+  const func = getFuncSelecionado();
+  if (!func) return null;
+
+  const marcados = getTurnosMarcados();
+  const entrada = document.getElementById('ponto-entrada').value;
+  const saida = document.getElementById('ponto-saida').value;
+  const temHorario = !!(entrada || saida);
+  const temTurnos = marcados.length > 0;
+
+  if (!temHorario && !temTurnos) return null;
+  if (temHorario && temTurnos) {
+    return { erro: 'Informe horário OU marque turnos — não os dois ao mesmo tempo.' };
+  }
+
+  const cadastrados = getTurnosCadastrados(func);
+  let total = 0;
+
+  if (temTurnos) {
+    // Turno cadastrado = carga do funcionário; não cadastrado = 4h padrão
+    const HORAS_PADRAO_TURNO = 4;
+    for (const id of marcados) {
+      const t = cadastrados.find(x => x.id === id);
+      total += t ? (Number(t.horas) || 0) : HORAS_PADRAO_TURNO;
+    }
+  } else if (entrada && saida) {
+    // Se o período bate com um turno cadastrado, compara com a jornada dele;
+    // se não bate com nenhum, o período inteiro conta (horas avulsas).
+    const trabalhado = calcHorasIntervalo(entrada, saida);
+    if (trabalhado === null) return { erro: 'Horário inválido.' };
+
+    const toMin = h => { const [x, y] = h.split(':').map(Number); return x * 60 + y; };
+    const iniMin = toMin(entrada);
+    const fimMin = toMin(saida);
+
+    let melhorTurno = null;
+    let melhorOverlap = 0;
+    for (const t of cadastrados) {
+      if (!t.entrada || !t.saida) continue;
+      const overlap = Math.min(fimMin, toMin(t.saida)) - Math.max(iniMin, toMin(t.entrada));
+      if (overlap > melhorOverlap) { melhorOverlap = overlap; melhorTurno = t; }
+    }
+
+    total = melhorTurno
+      ? Math.abs(trabalhado - (Number(melhorTurno.horas) || 0))
+      : trabalhado;
+  } else if (saida) {
+    // Compara com a saída padrão do turno mais próximo do horário informado
+    const candidatos = cadastrados.filter(t => t.saida);
+    if (!candidatos.length) return { erro: 'Funcionário sem horário padrão — informe entrada E saída.' };
+    const turnoRef = candidatos.reduce((melhor, t) =>
+      diffSimplesHoras(t.saida, saida) < diffSimplesHoras(melhor.saida, saida) ? t : melhor);
+    total = diffSimplesHoras(turnoRef.saida, saida);
+  } else {
+    // Compara com a entrada padrão do turno mais próximo do horário informado
+    const candidatos = cadastrados.filter(t => t.entrada);
+    if (!candidatos.length) return { erro: 'Funcionário sem horário padrão — informe entrada E saída.' };
+    const turnoRef = candidatos.reduce((melhor, t) =>
+      diffSimplesHoras(t.entrada, entrada) < diffSimplesHoras(melhor.entrada, entrada) ? t : melhor);
+    total = diffSimplesHoras(turnoRef.entrada, entrada);
+  }
+
+  return { total: Math.round(total * 100) / 100, temHorario };
+}
+
+function atualizarPreviewPonto() {
+  const el = document.getElementById('ponto-preview');
+  const calc = calcularLancamento();
+
+  if (!calc) { el.classList.add('hidden'); return; }
+
+  el.classList.remove('hidden');
+  el.classList.remove('positivo', 'negativo', 'neutro');
+
+  if (calc.erro) {
+    el.classList.add('negativo');
+    el.innerHTML = `⚠️ ${calc.erro}`;
     return;
   }
 
-  el.innerHTML = eventos.map(e => {
-    const dIni = e.dataInicio ? new Date(e.dataInicio + 'T12:00:00').toLocaleDateString('pt-BR') : '?';
-    const dFim = e.dataFim ? new Date(e.dataFim + 'T12:00:00').toLocaleDateString('pt-BR') : '?';
-    
-    return `
-      <div class="evento-card" data-id="${e.id}">
-        <div class="evento-card-info">
-          <div class="evento-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          </div>
-          <div>
-            <div class="evento-card-nome">${esc(e.nome)}</div>
-            <div class="evento-card-data">${dIni} até ${dFim}</div>
-          </div>
-        </div>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="opacity:.3"><polyline points="9 18 15 12 9 6"/></svg>
-      </div>`;
-  }).join('');
-
-  el.querySelectorAll('.evento-card').forEach(card => {
-    card.addEventListener('click', () => abrirDetalheEvento(card.dataset.id));
-  });
-}
-
-async function criarNovoEvento() {
-  const nome = document.getElementById('novo-nome-evento').value.trim();
-  const dataInicio = document.getElementById('evento-data-inicio').value;
-  const dataFim = document.getElementById('evento-data-fim').value;
-
-  if (!nome || !dataInicio || !dataFim) { 
-    showToast('⚠️ Preencha nome e ambas as datas.', 'error'); return; 
-  }
-
-  try {
-    await addDoc(collection(db, 'eventos_rh'), {
-      nome,
-      dataInicio,
-      dataFim,
-      criadoEm: serverTimestamp(),
-      criadoPor: currentUser.uid
-    });
-    document.getElementById('novo-nome-evento').value = '';
-    document.getElementById('evento-data-inicio').value = '';
-    document.getElementById('evento-data-fim').value = '';
-    showToast('✅ Evento criado com sucesso!', 'success');
-  } catch (err) {
-    showToast('❌ Erro ao criar evento: ' + err.message, 'error');
-  }
-}
-
-async function abrirDetalheEvento(id) {
-  try {
-    const docSnap = await getDoc(doc(db, 'eventos_rh', id));
-    if (!docSnap.exists()) return;
-    
-    currentEventData = { id: docSnap.id, ...docSnap.data() };
-    currentEventId = id;
-
-    const dIni = new Date(currentEventData.dataInicio + 'T12:00:00').toLocaleDateString('pt-BR');
-    const dFim = new Date(currentEventData.dataFim + 'T12:00:00').toLocaleDateString('pt-BR');
-
-    document.getElementById('detalhe-evento-nome').textContent = currentEventData.nome;
-    document.getElementById('detalhe-evento-periodo').textContent = `${dIni} a ${dFim}`;
-    document.getElementById('evento-lista-container').classList.add('hidden');
-    document.getElementById('evento-detalhe-container').classList.remove('hidden');
-
-    await carregarEstadoEvento(id);
-  } catch(err) {
-    showToast('❌ Erro ao abrir: ' + err.message, 'error');
-  }
-}
-
-async function excluirEventoAtual() {
-  if (!currentEventId) return;
-  if (!confirm(`Excluir evento?\n\nIsso remove apenas o gerenciador de entrada/saída. As horas já registradas nos funcionários permanecem intactas.`)) return;
-
-  try {
-    await deleteDoc(doc(db, 'eventos_rh', currentEventId));
-    document.getElementById('btn-voltar-lista').click();
-    showToast('🗑️ Evento excluído.', 'success');
-  } catch (err) {
-    showToast('❌ Erro ao excluir: ' + err.message, 'error');
-  }
-}
-
-// ---- Lógica de Entrada/Saída Interna ----
-async function carregarEstadoEvento(eventId) {
-  const lista = document.getElementById('evento-lista-funcionarios');
-  lista.innerHTML = '<div class="ch-loading">Carregando ponto do dia...</div>';
-  eventoState = {};
-
-  const hoje = new Date().toISOString().split('T')[0];
-  document.getElementById('dia-atual-label').textContent = `DIA: ${hoje.split('-').reverse().slice(0,2).join('/')}`;
-
-  try {
-    // Busca APENAS registros do DIA ATUAL para este evento
-    const q = query(
-      collection(db, 'registros_carga_horaria'),
-      where('eventoId', '==', eventId),
-      where('dataEvento', '==', hoje)
-    );
-    const snap = await getDocs(q);
-    snap.forEach(d => {
-      const data = d.data();
-      if (!eventoState[data.funcionarioId]) eventoState[data.funcionarioId] = {};
-      
-      const key = data.turnoId || 'default';
-      eventoState[data.funcionarioId][key] = {
-        docId: d.id,
-        status: data.saida ? 'finalizado' : 'andamento',
-        entrada: data.entrada?.toDate() || null,
-        turnoHoras: data.turnoHoras || 0
-      };
-    });
-
-    renderEventoFuncLista();
-  } catch (err) {
-    showToast('❌ Erro ao carregar estado: ' + err.message, 'error');
-  }
-}
-
-function renderEventoFuncLista() {
-  const lista = document.getElementById('evento-lista-funcionarios');
-  if (!allFuncionarios.length) {
-    lista.innerHTML = `<div class="evento-placeholder"><p>Nenhum funcionário cadastrado.</p></div>`;
+  const operacao = document.querySelector('input[name="tipo-op"]:checked').value;
+  if (calc.total === 0) {
+    el.classList.add('neutro');
+    el.innerHTML = 'Cálculo resultou em <strong>0h</strong> — nada será lançado.';
     return;
   }
 
-  const hoje = new Date().toISOString().split('T')[0];
-  const foraDoPeriodo = (hoje < currentEventData.dataInicio || hoje > currentEventData.dataFim);
-
-  lista.innerHTML = allFuncionarios.map(f => {
-    const hoje = new Date().toISOString().split('T')[0];
-    const foraDoPeriodo = (hoje < currentEventData.dataInicio || hoje > currentEventData.dataFim);
-    const fState = eventoState[f.id] || {};
-
-    // Se tiver turnos declarados, renderiza uma linha para cada
-    const turnosParaRenderizar = (f.turnos && f.turnos.length) 
-      ? f.turnos 
-      : [{ id: 'default', label: 'Geral', horas: f.horasTurno || 0 }];
-
-    // Verifica se tem algo em andamento ou finalizado para mostrar no header
-    const hasAndamento = Object.values(fState).some(s => s.status === 'andamento');
-    const allFinalizado = turnosParaRenderizar.every(t => fState[t.id]?.status === 'finalizado');
-    const someFinalizado = Object.values(fState).some(s => s.status === 'finalizado');
-
-    let statusDot = '';
-    if (hasAndamento) statusDot = '<span class="status-dot andamento"></span>';
-    else if (allFinalizado) statusDot = '<span class="status-dot finalizado"></span>';
-    else if (someFinalizado) statusDot = '<span class="status-dot finalizado-parcial"></span>';
-
-    const rowsHtml = turnosParaRenderizar.map(t => {
-      const estado = fState[t.id] || { status: 'aguardando' };
-      const { status } = estado;
-      const badgeMap = { 
-        aguardando: 'badge-aguardando Aguardando', 
-        andamento: 'badge-andamento Em Andamento', 
-        finalizado: 'badge-finalizado Finalizado' 
-      };
-      const [badgeClass, badgeLabel] = badgeMap[status].split(' ').reduce((a,v,i) => i===0?[v,a[1]]:[a[0],a[1]+' '+v], ['','']);
-      
-      const entradaBtn = status === 'aguardando' && !foraDoPeriodo;
-      const saidaBtn   = status === 'andamento' && !foraDoPeriodo;
-      const tLabel = t.id === 'default' ? '' : `<div class="shift-name">${TURNO_LABEL[t.id] || t.id}</div>`;
-
-      return `
-        <div class="evento-shift-row status-${status}">
-          <div class="shift-info">
-            ${tLabel}
-            <span class="evento-status-badge ${badgeClass}">${badgeLabel.trim()}</span>
-          </div>
-          <div class="evento-func-btns">
-            <button class="btn-entrada" ${!entradaBtn?'disabled':''} data-id="${f.id}" data-turno="${t.id}" data-horas="${t.horas}">
-              ▶ Entrada
-            </button>
-            <button class="btn-saida" ${!saidaBtn?'disabled':''} data-id="${f.id}" data-turno="${t.id}">
-              ■ Saída
-            </button>
-          </div>
-        </div>`;
-    }).join('');
-
-    return `
-      <div class="evento-func-card accordion-card ${foraDoPeriodo?'opacity-50':''}" id="ecard-${f.id}">
-        <div class="evento-func-header accordion-toggle" data-id="${f.id}">
-          <div class="evento-func-info">
-            <div class="evento-func-nome">${esc(f.nome)} ${statusDot}</div>
-            <div class="evento-func-cargo">${esc(f.cargo)}</div>
-          </div>
-          <div class="accordion-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </div>
-        </div>
-        <div class="evento-func-shifts accordion-content hidden" id="shifts-${f.id}">
-          ${rowsHtml}
-        </div>
-      </div>`;
-  }).join('');
-
-  if (foraDoPeriodo) {
-    lista.insertAdjacentHTML('afterbegin', `<div class="alert-warning" style="margin-bottom:1rem; padding:0.8rem; background:rgba(249,115,22,0.1); border:1px solid var(--ch-orange); border-radius:8px; color:var(--ch-orange); text-align:center; font-size:0.85rem;">⚠️ Este evento está fora da data de vigência (${hoje < currentEventData.dataInicio ? 'Ainda não começou' : 'Já encerrou'}). Registros bloqueados.</div>`);
-  }
-
-  // Listeners de Acordeon
-  lista.querySelectorAll('.accordion-toggle').forEach(header => {
-    header.addEventListener('click', () => {
-      const id = header.dataset.id;
-      const content = document.getElementById(`shifts-${id}`);
-      const card = header.closest('.accordion-card');
-      const isHidden = content.classList.contains('hidden');
-      
-      // Fecha outros? (Opcional, vamos deixar livre pra abrir vários)
-      content.classList.toggle('hidden');
-      card.classList.toggle('expanded');
-    });
-  });
-
-  lista.querySelectorAll('.btn-entrada').forEach(btn =>
-    btn.addEventListener('click', () => registrarEntrada(btn.dataset.id, btn.dataset.turno, btn.dataset.horas)));
-  lista.querySelectorAll('.btn-saida').forEach(btn =>
-    btn.addEventListener('click', () => registrarSaida(btn.dataset.id, btn.dataset.turno)));
-}
-
-async function registrarEntrada(funcId, turnoId, turnoHoras) {
-  if (!currentEventId) return;
-  const func = allFuncionarios.find(f => f.id === funcId);
-  if (!func || (eventoState[funcId] && eventoState[funcId][turnoId])) return;
-
-  // Feedback visual no botão clicado
-  const btn = document.querySelector(`.btn-entrada[data-id="${funcId}"][data-turno="${turnoId}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = '...'; }
-
-  try {
-    const agora = new Date();
-    const docRef = await addDoc(collection(db, 'registros_carga_horaria'), {
-      funcionarioId:   funcId,
-      funcionarioNome: func.nome,
-      tipo:            'evento',
-      eventoId:        currentEventId,
-      descricao:       currentEventData.nome + (turnoId !== 'default' ? ` — ${TURNO_LABEL[turnoId] || turnoId}` : ''),
-      dataEvento:      agora.toISOString().split('T')[0],
-      entrada:         Timestamp.fromDate(agora),
-      saida:           null,
-      turnoId:         turnoId,
-      turnoHoras:      parseFloat(turnoHoras || 0),
-      horasExtras:     0,
-      lancadoPor:      currentUser.uid,
-      lancadoEm:       Timestamp.fromDate(agora)
-    });
-
-    if (!eventoState[funcId]) eventoState[funcId] = {};
-    eventoState[funcId][turnoId] = { docId: docRef.id, status: 'andamento', entrada: agora, turnoHoras: parseFloat(turnoHoras || 0) };
-    renderEventoFuncLista();
-    const tLabel = turnoId === 'default' ? '' : ` (${TURNO_LABEL[turnoId] || turnoId})`;
-    showToast(`✅ Entrada: ${func.nome}${tLabel}`, 'success');
-  } catch (err) {
-    showToast('❌ Erro: ' + err.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '▶ Entrada'; }
+  if (operacao === 'retirar') {
+    el.classList.add('negativo');
+    el.innerHTML = `Será <strong>retirado ${fmtHoras(calc.total)}</strong> do banco de horas.`;
+  } else {
+    el.classList.add('positivo');
+    el.innerHTML = `Será <strong>adicionado ${fmtHoras(calc.total)}</strong> ao banco de horas.`;
   }
 }
 
-async function registrarSaida(funcId, turnoId) {
-  const func  = allFuncionarios.find(f => f.id === funcId);
-  const estado = (eventoState[funcId] && eventoState[funcId][turnoId]) ? eventoState[funcId][turnoId] : null;
-  if (!func || !estado || estado.status !== 'andamento') return;
+function setupFormPonto() {
+  // Data padrão: hoje
+  document.getElementById('ponto-data').value = new Date().toISOString().split('T')[0];
 
-  const btn = document.querySelector(`.btn-saida[data-id="${funcId}"][data-turno="${turnoId}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  document.getElementById('ponto-entrada').addEventListener('input', atualizarPreviewPonto);
+  document.getElementById('ponto-saida').addEventListener('input', atualizarPreviewPonto);
+  document.querySelectorAll('input[name="tipo-op"]').forEach(r =>
+    r.addEventListener('change', atualizarPreviewPonto));
 
-  try {
-    const agora = new Date();
-    const diffHoras   = (agora - estado.entrada) / 3600000;
-    
-    // Usa as horas do turno específico, ou o total se for legado
-    const horasEsperadas = parseFloat(estado.turnoHoras || 0);
-    const horasExtras = Math.max(0, Math.round((diffHoras - horasEsperadas) * 100) / 100);
-
-    console.log(`[PONTO] Saída: ${func.nome} | Turno: ${turnoId}`);
-    console.log(`[PONTO] Entrada: ${estado.entrada.toLocaleTimeString()} | Agora: ${agora.toLocaleTimeString()}`);
-    console.log(`[PONTO] Horas Trabalhadas: ${diffHoras.toFixed(4)} | Horas Esperadas: ${horasEsperadas.toFixed(4)}`);
-    console.log(`[PONTO] Cálculo: ${diffHoras.toFixed(4)} - ${horasEsperadas.toFixed(4)} = ${(diffHoras - horasEsperadas).toFixed(4)}`);
-    console.log(`[PONTO] Extras calculados: ${horasExtras}`);
-
-    await updateDoc(doc(db, 'registros_carga_horaria', estado.docId), {
-      saida: Timestamp.fromDate(agora),
-      horasExtras
-    });
-
-    const novoTotal = (func.totalHorasExtras || 0) + horasExtras;
-    await updateDoc(doc(db, 'funcionarios_rh', funcId), { totalHorasExtras: novoTotal });
-
-    const idx = allFuncionarios.findIndex(f => f.id === funcId);
-    if (idx >= 0) allFuncionarios[idx].totalHorasExtras = novoTotal;
-
-    eventoState[funcId][turnoId] = { ...estado, status: 'finalizado', saida: agora };
-    renderEventoFuncLista();
-    const tLabel = turnoId === 'default' ? '' : ` (${TURNO_LABEL[turnoId] || turnoId})`;
-    showToast(`✅ Saída registrada para ${func.nome}${tLabel}`, 'success');
-  } catch (err) {
-    showToast('❌ Erro: ' + err.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '■ Saída'; }
-  }
-}
-
-// ---- Lançamento Manual ----
-function popularDatalistManual() {
-  const dl = document.getElementById('lista-funcs-datalist');
-  dl.innerHTML = allFuncionarios.map(f => `<option value="${esc(f.nome)}">`).join('');
-}
-
-function setupFormManual() {
-  document.getElementById('form-manual').addEventListener('submit', async e => {
+  document.getElementById('form-ponto').addEventListener('submit', async e => {
     e.preventDefault();
-    const nomeBusca = document.getElementById('manual-func-search').value.trim();
-    const descricao = document.getElementById('manual-descricao').value.trim();
-    const horas     = parseFloat(document.getElementById('manual-horas').value);
-    const tipoOp    = document.querySelector('input[name="manual-tipo-op"]:checked').value;
-    
-    // Encontra funcionário pelo nome (autocomplete)
-    const func = allFuncionarios.find(f => f.nome.toLowerCase() === nomeBusca.toLowerCase());
+    const func = getFuncSelecionado();
+    if (!func) { showToast('⚠️ Selecione um funcionário.', 'error'); return; }
 
-    if (!func) {
-      showToast('⚠️ Funcionário não encontrado. Selecione da lista.', 'error'); return;
-    }
-    if (!descricao || isNaN(horas) || horas <= 0) {
-      showToast('⚠️ Preencha todos os campos corretamente.', 'error'); return;
-    }
+    const data = document.getElementById('ponto-data').value;
+    const turnosMarcados = getTurnosMarcados();
+    if (!data) { showToast('⚠️ Informe a data.', 'error'); return; }
 
-    const valorFinal = tipoOp === 'debito' ? -horas : horas;
+    const calc = calcularLancamento();
+    if (!calc) { showToast('⚠️ Informe um horário ou marque um turno.', 'error'); return; }
+    if (calc.erro) { showToast('⚠️ ' + calc.erro, 'error'); return; }
 
-    const btn = document.getElementById('btn-manual-submit');
+    const entrada = document.getElementById('ponto-entrada').value || null;
+    const saida = document.getElementById('ponto-saida').value || null;
+    const descricao = document.getElementById('ponto-descricao').value.trim();
+    if (!descricao) { showToast('⚠️ Informe o motivo do lançamento.', 'error'); return; }
+    const operacao = document.querySelector('input[name="tipo-op"]:checked').value;
+
+    const btn = document.getElementById('btn-ponto');
     btn.disabled = true;
     try {
-      await addDoc(collection(db, 'registros_carga_horaria'), {
-        funcionarioId:   func.id,
-        funcionarioNome: func.nome,
-        tipo:            tipoOp === 'debito' ? 'debito' : 'manual',
-        descricao,
-        entrada:         null,
-        saida:           null,
-        horasExtras:     valorFinal,
-        lancadoPor:      currentUser.uid,
-        lancadoEm:       serverTimestamp(),
-        dataEvento:      new Date().toISOString().split('T')[0]
+      const res = await apiFetch('/carga-horaria/custom/pontos', {
+        method: 'POST',
+        body: JSON.stringify({ funcionarioId: func.id, data, operacao, turnos: turnosMarcados, entrada, saida, descricao })
       });
 
-      const novoTotal = Math.max(0, (func.totalHorasExtras || 0) + valorFinal);
-      await updateDoc(doc(db, 'funcionarios_rh', func.id), { totalHorasExtras: novoTotal });
-
       const idx = allFuncionarios.findIndex(f => f.id === func.id);
-      if (idx >= 0) allFuncionarios[idx].totalHorasExtras = novoTotal;
+      if (idx >= 0) allFuncionarios[idx].totalHorasExtras = res.novoSaldo;
 
-      e.target.reset();
-      showToast(`✅ ${Math.abs(valorFinal)}h ${tipoOp === 'debito' ? 'retiradas' : 'lançadas'} para ${func.nome}`, 'success');
+      // Limpa campos mantendo funcionário e data
+      document.getElementById('ponto-entrada').value = '';
+      document.getElementById('ponto-saida').value = '';
+      document.getElementById('ponto-descricao').value = '';
+      document.querySelectorAll('input[name="turno-check"]').forEach(cb => cb.checked = false);
+      atualizarPreviewPonto();
+
+      const msg = res.horasExtras >= 0
+        ? `+${fmtHoras(res.horasExtras)} adicionado`
+        : `${fmtHoras(res.horasExtras)} retirado`;
+      showToast(`✅ Lançamento registrado — ${msg}.`, 'success');
+      renderStats();
+      await carregarExtrato(func.id);
     } catch (err) {
       showToast('❌ Erro: ' + err.message, 'error');
     } finally {
@@ -636,85 +400,270 @@ function setupFormManual() {
   });
 }
 
+
 // ================================================================
-//  ABA 3 — HISTÓRICO
+//  RECESSOS & FERIADOS
 // ================================================================
-function setupHistorico() {
-  const searchInput = document.getElementById('hist-func-search');
-  
-  searchInput.addEventListener('input', async e => {
-    const nomeBusca = e.target.value.trim();
-    // Encontra funcionário pelo nome (autocomplete)
-    const f = allFuncionarios.find(x => x.nome.toLowerCase() === nomeBusca.toLowerCase());
-    
-    histFuncAtual = f || null;
-    document.getElementById('btn-exportar-csv').disabled = !histFuncAtual;
-    
-    if (histFuncAtual) {
-      await carregarHistorico(histFuncAtual.id);
-    } else {
-      document.getElementById('hist-resumo').classList.add('hidden');
-      document.getElementById('hist-lista').innerHTML = `<div class="evento-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><p>Selecione um funcionário.</p></div>`;
+function setupRecessos() {
+  // O submit do formulário abre o modal de seleção de participantes
+  document.getElementById('form-recesso').addEventListener('submit', e => {
+    e.preventDefault();
+    const nome = document.getElementById('recesso-nome').value.trim();
+    const data = document.getElementById('recesso-data').value;
+    if (!nome || !data) { showToast('⚠️ Preencha nome e data do recesso.', 'error'); return; }
+    abrirModalRecessoFunc(nome, data);
+  });
+
+  // Busca no modal
+  document.getElementById('modal-func-busca').addEventListener('input', filtrarModalFunc);
+
+  // Selecionar todos
+  document.getElementById('modal-func-todos').addEventListener('change', e => {
+    document.querySelectorAll('#modal-func-lista input[type="checkbox"]').forEach(cb => {
+      if (cb.closest('.ch-func-item').style.display !== 'none') cb.checked = e.target.checked;
+    });
+    atualizarContadorRecesso();
+  });
+
+  document.getElementById('modal-func-lista').addEventListener('change', atualizarContadorRecesso);
+
+  document.getElementById('btn-cancelar-recesso-func').addEventListener('click', () => {
+    document.getElementById('modal-recesso-func').classList.remove('active');
+  });
+
+  document.getElementById('btn-confirmar-recesso-func').addEventListener('click', async () => {
+    const nome = document.getElementById('recesso-nome').value.trim();
+    const data = document.getElementById('recesso-data').value;
+    const ids = [...document.querySelectorAll('#modal-func-lista input[type="checkbox"]:checked')]
+      .map(cb => cb.value);
+
+    if (!ids.length) { showToast('⚠️ Selecione pelo menos um funcionário.', 'error'); return; }
+
+    const btn = document.getElementById('btn-confirmar-recesso-func');
+    btn.disabled = true;
+    try {
+      const res = await apiFetch('/carga-horaria/custom/recessos', {
+        method: 'POST',
+        body: JSON.stringify({ nome, data, funcionarioIds: ids })
+      });
+      document.getElementById('modal-recesso-func').classList.remove('active');
+      document.getElementById('form-recesso').reset();
+      showToast(`✅ Recesso criado — horas debitadas de ${res.totalFuncionarios} funcionário(s).`, 'success');
+      await Promise.all([carregarRecessos(), carregarFuncionarios()]);
+      if (funcionarioAtual) await carregarExtrato(funcionarioAtual.id);
+    } catch (err) {
+      showToast('❌ Erro ao criar recesso: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
     }
   });
 
-  document.getElementById('btn-exportar-csv').addEventListener('click', exportarCSV);
-}
+  // Delegação: excluir recesso
+  document.getElementById('lista-recessos').addEventListener('click', e => {
+    const btn = e.target.closest('[data-recesso-id]');
+    if (!btn) return;
+    recessoParaExcluir = btn.dataset.recessoId;
+    const rec = recessos.find(r => r.id === recessoParaExcluir);
+    document.getElementById('modal-excluir-texto').innerHTML =
+      `Excluir <strong>${esc(rec?.nome || 'recesso')}</strong>? Os débitos aplicados a todos os funcionários serão <strong>revertidos automaticamente</strong>.`;
+    document.getElementById('modal-excluir-recesso').classList.add('active');
+  });
 
-function popularSelectHistorico() {
-  const dl = document.getElementById('hist-funcs-datalist');
-  dl.innerHTML = allFuncionarios.map(f => `<option value="${esc(f.nome)}">`).join('');
-}
+  document.getElementById('btn-cancelar-excluir').addEventListener('click', () => {
+    recessoParaExcluir = null;
+    document.getElementById('modal-excluir-recesso').classList.remove('active');
+  });
 
-let todosRegistros = [];
-
-async function carregarHistorico(funcId) {
-  document.getElementById('hist-lista').innerHTML = '<div class="ch-loading">Carregando...</div>';
-  try {
-    const q = query(
-      collection(db, 'registros_carga_horaria'),
-      where('funcionarioId', '==', funcId),
-      orderBy('lancadoEm', 'desc')
-    );
-    const snap = await getDocs(q);
-    todosRegistros = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderHistorico(todosRegistros);
-    renderResumo();
-  } catch(err) {
-    if (err.message.includes('index')) {
-      showToast('⚠️ O banco de dados precisa de uma configuração inicial. Clique no link do erro no console ou aguarde a aplicação do índice.', 'error');
-    } else {
-      showToast('❌ Erro ao carregar histórico: ' + err.message, 'error');
+  document.getElementById('btn-confirmar-excluir').addEventListener('click', async () => {
+    if (!recessoParaExcluir) return;
+    const btn = document.getElementById('btn-confirmar-excluir');
+    btn.disabled = true;
+    try {
+      const res = await apiFetch(`/carga-horaria/custom/recessos/${recessoParaExcluir}`, { method: 'DELETE' });
+      showToast(`✅ Recesso removido — ${res.registrosRevertidos} débito(s) revertido(s).`, 'success');
+      document.getElementById('modal-excluir-recesso').classList.remove('active');
+      recessoParaExcluir = null;
+      await Promise.all([carregarRecessos(), carregarFuncionarios()]);
+      if (funcionarioAtual) await carregarExtrato(funcionarioAtual.id);
+    } catch (err) {
+      showToast('❌ Erro ao excluir recesso: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
     }
-    console.error("Erro Firestore:", err);
+  });
+}
+
+// Modal de participantes: lista todos os ativos agrupados por cargo/setor
+function abrirModalRecessoFunc(nome, data) {
+  const lista = document.getElementById('modal-func-lista');
+  const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR');
+  document.getElementById('modal-recesso-info').textContent =
+    `"${nome}" em ${dataFmt} — as horas do dia serão debitadas dos selecionados.`;
+
+  // Agrupar por setor (funcionários sem setor ficam no grupo "Sem setor")
+  const grupos = {};
+  allFuncionarios.forEach(f => {
+    const setor = (f.setor || 'Sem setor').trim();
+    if (!grupos[setor]) grupos[setor] = [];
+    grupos[setor].push(f);
+  });
+
+  lista.innerHTML = Object.keys(grupos).sort((a, b) => {
+    if (a === 'Sem setor') return 1;
+    if (b === 'Sem setor') return -1;
+    return a.localeCompare(b);
+  }).map(setor => `
+    <div class="ch-func-grupo">${esc(setor)}</div>
+    ${grupos[setor].map(f => `
+      <label class="ch-func-item" data-nome="${esc(f.nome.toLowerCase())}">
+        <input type="checkbox" value="${esc(f.id)}" checked>
+        <span class="ch-func-item-nome">${esc(f.nome)}</span>
+        <span class="ch-func-item-horas">${fmtHoras(Number(f.horasTurno) || 0)}/dia</span>
+      </label>`).join('')}
+  `).join('');
+
+  document.getElementById('modal-func-busca').value = '';
+  document.getElementById('modal-func-todos').checked = true;
+  atualizarContadorRecesso();
+  document.getElementById('modal-recesso-func').classList.add('active');
+}
+
+function filtrarModalFunc() {
+  const termo = document.getElementById('modal-func-busca').value.trim().toLowerCase();
+  const itens = document.querySelectorAll('#modal-func-lista .ch-func-item');
+  itens.forEach(item => {
+    item.style.display = item.dataset.nome.includes(termo) ? '' : 'none';
+  });
+  // Esconde títulos de grupo sem itens visíveis
+  document.querySelectorAll('#modal-func-lista .ch-func-grupo').forEach(grupo => {
+    let el = grupo.nextElementSibling;
+    let temVisivel = false;
+    while (el && !el.classList.contains('ch-func-grupo')) {
+      if (el.style.display !== 'none') { temVisivel = true; break; }
+      el = el.nextElementSibling;
+    }
+    grupo.style.display = temVisivel ? '' : 'none';
+  });
+}
+
+function atualizarContadorRecesso() {
+  const n = document.querySelectorAll('#modal-func-lista input[type="checkbox"]:checked').length;
+  document.getElementById('btn-confirmar-recesso-func').textContent = `Criar Recesso (${n})`;
+}
+
+function renderRecessos() {
+  const el = document.getElementById('lista-recessos');
+  if (!recessos.length) {
+    el.innerHTML = `
+      <div class="ch-empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <p>Nenhum recesso cadastrado.</p>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = recessos.map(r => {
+    const dataFmt = r.data ? new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+    return `
+      <div class="ch-recesso-item">
+        <div class="ch-recesso-info">
+          <span class="ch-recesso-nome">${esc(r.nome)}</span>
+          <span class="ch-recesso-meta">${dataFmt} · ${r.totalFuncionarios || 0} funcionário(s)</span>
+        </div>
+        <button class="ch-icon-btn action-execute" data-recesso-id="${esc(r.id)}" title="Excluir e reverter débitos">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div>`;
+  }).join('');
+}
+
+// ================================================================
+//  EXTRATO
+// ================================================================
+function setupExtrato() {
+  document.getElementById('func-select').addEventListener('change', async e => {
+    const funcId = e.target.value;
+    popularTurnosCheck();
+    if (!funcId) {
+      funcionarioAtual = null;
+      extratoRegistros = [];
+      document.getElementById('saldo-card').classList.add('hidden');
+      document.getElementById('btn-exportar-pdf').disabled = true;
+      document.getElementById('extrato-lista').innerHTML =
+        `<div class="ch-empty"><p>Selecione um funcionário acima para ver o extrato.</p></div>`;
+      return;
+    }
+    await carregarExtrato(funcId);
+  });
+
+  document.getElementById('btn-exportar-pdf').addEventListener('click', exportarPDF);
+
+  // Delegação: excluir lançamento individual (estorna o saldo)
+  document.getElementById('extrato-lista').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-registro-id]');
+    if (!btn || !funcionarioAtual) return;
+    if (!confirm('Excluir este lançamento?\n\nO efeito no banco de horas será estornado.')) return;
+
+    btn.disabled = true;
+    try {
+      await apiFetch(`/carga-horaria/custom/registros/${btn.dataset.registroId}`, { method: 'DELETE' });
+      showToast('✅ Lançamento excluído e saldo estornado.', 'success');
+      await Promise.all([carregarFuncionarios(), carregarExtrato(funcionarioAtual.id)]);
+    } catch (err) {
+      showToast('❌ Erro ao excluir: ' + err.message, 'error');
+      btn.disabled = false;
+    }
+  });
+}
+
+async function carregarExtrato(funcId) {
+  document.getElementById('extrato-lista').innerHTML = '<div class="ch-loading">Carregando extrato...</div>';
+  try {
+    const res = await apiFetch(`/carga-horaria/custom/extrato/${funcId}`);
+    funcionarioAtual = { id: res.funcionario.id, ...res.funcionario, totalHorasExtras: res.saldo };
+    extratoRegistros = res.registros;
+    document.getElementById('btn-exportar-pdf').disabled = !extratoRegistros.length;
+    renderSaldo(res.saldo);
+    renderExtrato(extratoRegistros);
+  } catch (err) {
+    showToast('❌ Erro ao carregar extrato: ' + err.message, 'error');
+    document.getElementById('extrato-lista').innerHTML =
+      `<div class="ch-empty"><p>Erro ao carregar o extrato.</p></div>`;
   }
 }
 
-function renderResumo() {
-  if (!histFuncAtual) return;
-  document.getElementById('hist-resumo').classList.remove('hidden');
-  document.getElementById('resumo-avatar').textContent = histFuncAtual.nome.charAt(0).toUpperCase();
-  document.getElementById('resumo-nome').textContent   = histFuncAtual.nome;
-  
-  const turnoInfo = (histFuncAtual.turnos && histFuncAtual.turnos.length) 
-    ? `${histFuncAtual.turnos.length} Turnos` 
-    : (TURNO_LABEL[histFuncAtual.turno] || histFuncAtual.turno || 'Geral');
+function renderSaldo(saldo) {
+  const card = document.getElementById('saldo-card');
+  card.classList.remove('hidden');
+  card.classList.toggle('negativo', saldo < 0);
+  card.classList.toggle('positivo', saldo >= 0);
 
-  document.getElementById('resumo-cargo').textContent  = histFuncAtual.cargo + ' · ' + turnoInfo;
-  document.getElementById('resumo-total-horas').textContent    = fmtHoras(histFuncAtual.totalHorasExtras || 0);
-  document.getElementById('resumo-total-registros').textContent = todosRegistros.length;
+  document.getElementById('saldo-avatar').textContent = (funcionarioAtual.nome || '?').charAt(0).toUpperCase();
+  document.getElementById('saldo-nome').textContent   = funcionarioAtual.nome;
+  document.getElementById('saldo-cargo').textContent  = funcionarioAtual.setor || funcionarioAtual.cargo || 'Sem setor';
+  document.getElementById('saldo-valor').textContent  = fmtHoras(saldo);
+  document.getElementById('saldo-label').textContent  = saldo < 0 ? 'Devendo Horas' : 'Banco de Horas';
 }
 
-function renderHistorico(registros) {
-  const lista = document.getElementById('hist-lista');
+const TIPO_BADGE = {
+  ponto:   ['badge-ponto', 'Ponto'],
+  manual:  ['badge-manual', 'Crédito'],
+  debito:  ['badge-debito', 'Débito'],
+  recesso: ['badge-recesso', 'Recesso'],
+  evento:  ['badge-evento', 'Evento']
+};
+
+function renderExtrato(registros) {
+  const lista = document.getElementById('extrato-lista');
   if (!registros.length) {
-    lista.innerHTML = `<div class="ch-empty"><p>Nenhum registro encontrado.</p></div>`; return;
+    lista.innerHTML = `<div class="ch-empty"><p>Nenhum lançamento para este funcionário.</p></div>`;
+    return;
   }
 
   // Agrupar por mês/ano
   const grupos = {};
   registros.forEach(r => {
-    const dataObj = r.lancadoEm?.toDate ? r.lancadoEm.toDate() : new Date();
+    const dataObj = r.lancadoEm ? new Date(r.lancadoEm) : new Date();
     const mesAno = dataObj.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
     if (!grupos[mesAno]) grupos[mesAno] = [];
     grupos[mesAno].push(r);
@@ -723,64 +672,117 @@ function renderHistorico(registros) {
   let html = '';
   for (const [mesAno, items] of Object.entries(grupos)) {
     const mesCapitalizado = mesAno.charAt(0).toUpperCase() + mesAno.slice(1);
-    html += `<div class="hist-mes-header">${mesCapitalizado}</div>`;
-    
+    html += `<div class="ch-mes-header">${mesCapitalizado}</div>`;
+
     html += items.map(r => {
-      const data = r.lancadoEm?.toDate ? r.lancadoEm.toDate().toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
-      const tipo = r.tipo === 'evento' ? 'tipo-evento Evento' : 'tipo-manual Manual';
-      const [tipoClass, tipoLabel] = tipo.split(' ');
-      
+      const data = r.lancadoEm
+        ? new Date(r.lancadoEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—';
+      const [tipoClass, tipoLabel] = TIPO_BADGE[r.tipo] || ['badge-evento', r.tipo || '—'];
+
       const valor = Number(r.horasExtras || 0);
       const valorFormatado = (valor >= 0 ? '+' : '') + fmtHoras(valor);
-      const valorClasse = valor >= 0 ? 'hist-horas-pos' : 'hist-horas-neg';
+      const valorClasse = valor >= 0 ? 'ch-horas-pos' : 'ch-horas-neg';
 
+      const podeExcluir = r.tipo !== 'recesso';
       return `
-        <div class="hist-registro-card">
-          <span class="hist-tipo-badge ${tipoClass}">${tipoLabel}</span>
-          <div class="hist-registro-info">
-            <div class="hist-registro-desc">${esc(r.descricao)}</div>
-            <div class="hist-registro-data">${data}</div>
+        <div class="ch-registro-card">
+          <span class="ch-tipo-badge ${tipoClass}">${tipoLabel}</span>
+          <div class="ch-registro-info">
+            <div class="ch-registro-desc">${esc(r.descricao || '')}</div>
+            <div class="ch-registro-data">${data}</div>
           </div>
-          <div class="hist-registro-horas">
-            <span class="hist-horas-valor ${valorClasse}">${valorFormatado}</span>
-            <span class="hist-horas-label">${valor >= 0 ? 'extras' : 'ajuste'}</span>
-          </div>
+          <span class="ch-registro-valor ${valorClasse}">${valorFormatado}</span>
+          ${podeExcluir ? `
+          <button class="ch-icon-btn action-execute" data-registro-id="${esc(r.id)}" title="Excluir lançamento (estorna o saldo)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>` : ''}
         </div>`;
     }).join('');
   }
-  
+
   lista.innerHTML = html;
 }
 
-function exportarCSV() {
-  if (!histFuncAtual || !todosRegistros.length) return;
+const TIPO_LABEL_PDF = { ponto: 'Ponto', manual: 'Crédito', debito: 'Débito', recesso: 'Recesso', evento: 'Evento' };
 
-  const linhas = [
-    ['Data', 'Tipo', 'Descrição', 'Horas Extras', 'Funcionário'],
-    ...todosRegistros.map(r => {
-      const data = r.lancadoEm?.toDate ? r.lancadoEm.toDate().toLocaleString('pt-BR') : '';
-      return [data, r.tipo, r.descricao, Number(r.horasExtras||0).toFixed(2), histFuncAtual.nome];
-    })
-  ];
+// Cache da logo da Fatec para os PDFs (dataURL + proporção)
+let logoCache = null;
+async function getLogoFatec() {
+  if (logoCache !== null) return logoCache;
+  try {
+    const blob = await (await fetch('/img/fateclogoazul.png')).blob();
+    const dataUrl = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = dataUrl;
+    });
+    logoCache = { dataUrl, ratio: img.naturalWidth / img.naturalHeight };
+  } catch (_) {
+    logoCache = false; // falhou; não tenta de novo
+  }
+  return logoCache;
+}
 
-  const csv = linhas.map(l => l.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `historico_${histFuncAtual.nome.replace(/\s+/g,'_')}_${new Date().toISOString().split('T')[0]}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-  showToast('📥 CSV exportado com sucesso!', 'success');
+async function exportarPDF() {
+  if (!funcionarioAtual || !extratoRegistros.length) return;
+  if (!window.jspdf) { showToast('❌ Biblioteca de PDF não carregou — verifique a conexão.', 'error'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const logo = await getLogoFatec();
+  if (logo) {
+    const h = 14;
+    const w = h * logo.ratio;
+    doc.addImage(logo.dataUrl, 'PNG', 14, 10, w, h);
+  }
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const saldo = Number(funcionarioAtual.totalHorasExtras) || 0;
+
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Extrato de Banco de Horas', 14, 32);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.text(`Funcionário: ${funcionarioAtual.nome}`, 14, 39);
+  doc.text(`Setor: ${funcionarioAtual.setor || funcionarioAtual.cargo || '—'}`, 14, 45);
+  doc.setFont(undefined, 'bold');
+  doc.text(`Saldo atual: ${fmtHoras(saldo)}${saldo < 0 ? ' (devendo horas)' : ''}`, 14, 51);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.text(`Emitido em ${hoje}`, 14, 57);
+
+  doc.autoTable({
+    startY: 62,
+    theme: 'grid',
+    head: [['Data', 'Tipo', 'Motivo', 'Horas']],
+    body: extratoRegistros.map(r => [
+      r.lancadoEm ? new Date(r.lancadoEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—',
+      TIPO_LABEL_PDF[r.tipo] || r.tipo || '—',
+      r.descricao || '',
+      (Number(r.horasExtras || 0) >= 0 ? '+' : '') + fmtHoras(Number(r.horasExtras || 0))
+    ]),
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [15, 78, 184] },
+    columnStyles: { 3: { halign: 'right' } }
+  });
+
+  doc.save(`extrato_${funcionarioAtual.nome.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+  showToast('📥 PDF exportado com sucesso!', 'success');
 }
 
 // ================================================================
 //  UTILITÁRIOS
 // ================================================================
-function abrirModal(id)  { document.getElementById(id).classList.add('active'); }
-function fecharModal(id) { document.getElementById(id).classList.remove('active'); }
-
-// Converte 1.5 -> "1h 30m"
+// Converte 1.5 -> "1h 30m" (com sinal para negativos)
 function fmtHoras(decimal) {
   const totalMinutos = Math.round(Math.abs(decimal) * 60);
   const h = Math.floor(totalMinutos / 60);
@@ -793,7 +795,7 @@ let toastTimer = null;
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.className   = `ch-toast ch-toast toast-${type}`;
+  t.className   = `ch-toast toast-${type}`;
   t.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 3500);

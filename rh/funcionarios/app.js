@@ -7,6 +7,7 @@ import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/fi
 import { firebaseConfig } from "../../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../../core/layout.js";
 import { escapeHTML as esc } from "../../core/security.js";
+import { getEffectiveLevel } from "../../core/permissions.js";
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -95,6 +96,7 @@ const onSnapshot = (path, callback) => {
 
 // ---- Estado global ----
 let allFuncionarios = [];
+let allSetores      = [];
 let editingFuncId   = null;
 
 const TURNO_LABEL = { manha:'Manhã', tarde:'Tarde', noite:'Noite', integral:'Integral' };
@@ -120,15 +122,28 @@ onAuthStateChanged(auth, async user => {
   try {
     const token = await user.getIdToken();
     const snap = await getDoc(doc(db, 'users', user.uid));
-    const role = snap.exists() ? (snap.data().role || 'visitante') : 'visitante';
-    const rolesPermitidos = ['adm_l1', 'adm_l2', 'rh'];
+    const me = snap.exists() ? snap.data() : {};
+    const role = me.role || 'visitante';
 
     setCachedAuth(user, role, token);
 
-    if (!rolesPermitidos.includes(role)) {
+    // Nível EFETIVO: override individual do usuário vence o do cargo
+    let nivel = 3;
+    if (role !== 'adm_l1') {
+      try {
+        const perms = await apiFetch('/usuarios/config/permissions');
+        nivel = getEffectiveLevel(perms[role] || {}, me.permissoes || null, 'funcionarios');
+      } catch (e) {
+        // Fallback: comportamento anterior por cargo
+        nivel = ['adm_l2', 'rh'].includes(role) ? 3 : 1;
+      }
+    }
+
+    if (nivel < 2) {
       document.getElementById('auth-guard').classList.remove('hidden');
       return;
     }
+    document.body.classList.toggle('hide-execute', role !== 'adm_l1' && nivel < 3);
 
     if (!appInitialized || initializedRole !== role || (cached && (cached.user.displayName !== user.displayName || cached.user.email !== user.email))) {
       initApp(user, role);
@@ -159,7 +174,91 @@ async function initApp(user, role) {
 
 function inicializar() {
   setupModalFuncionario();
+  setupModalSetores();
   carregarFuncionarios();
+  carregarSetores();
+}
+
+// ================================================================
+//  SETORES
+// ================================================================
+function carregarSetores() {
+  const colRef = collection(db, 'setores_rh');
+  onSnapshot(query(colRef, orderBy('nome')), snap => {
+    allSetores = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    popularSelectSetores();
+    renderSetores();
+  });
+}
+
+function popularSelectSetores() {
+  const sel = document.getElementById('func-setor');
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">Sem setor</option>' +
+    allSetores.map(s => `<option value="${esc(s.nome)}">${esc(s.nome)}</option>`).join('');
+  if (atual && allSetores.some(s => s.nome === atual)) sel.value = atual;
+}
+
+function renderSetores() {
+  const el = document.getElementById('lista-setores');
+  if (!allSetores.length) {
+    el.innerHTML = '<p style="color:var(--text-secondary); font-size:0.88rem; text-align:center; padding:1rem;">Nenhum setor cadastrado ainda.</p>';
+    return;
+  }
+  el.innerHTML = allSetores.map(s => {
+    const qtd = allFuncionarios.filter(f => f.setor === s.nome).length;
+    return `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.65rem 0.9rem; background:#f8fafc; border:1px solid var(--border-color); border-radius:8px;">
+        <div>
+          <span style="font-weight:700; font-size:0.9rem;">${esc(s.nome)}</span>
+          <span style="font-size:0.75rem; color:var(--text-secondary); margin-left:0.5rem;">${qtd} funcionário(s)</span>
+        </div>
+        <button class="icon-btn delete-btn-setor" data-id="${s.id}" data-nome="${esc(s.nome)}" title="Excluir setor">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div>`;
+  }).join('');
+
+  el.querySelectorAll('.delete-btn-setor').forEach(btn =>
+    btn.addEventListener('click', () => excluirSetor(btn.dataset.id, btn.dataset.nome)));
+}
+
+function setupModalSetores() {
+  document.getElementById('btn-setores').addEventListener('click', () => abrirModal('modal-setores'));
+  document.getElementById('btn-fechar-modal-setores').addEventListener('click', () => fecharModal('modal-setores'));
+
+  document.getElementById('form-setor').addEventListener('submit', async e => {
+    e.preventDefault();
+    const nome = document.getElementById('setor-nome').value.trim();
+    if (!nome) return;
+    if (allSetores.some(s => s.nome.toLowerCase() === nome.toLowerCase())) {
+      showToast('⚠️ Já existe um setor com esse nome.', 'error'); return;
+    }
+    try {
+      await addDoc(collection(db, 'setores_rh'), { nome, criadoEm: serverTimestamp() });
+      document.getElementById('setor-nome').value = '';
+      showToast('✅ Setor criado!', 'success');
+    } catch (err) {
+      showToast('❌ Erro ao criar setor: ' + err.message, 'error');
+    }
+  });
+}
+
+async function excluirSetor(id, nome) {
+  const qtd = allFuncionarios.filter(f => f.setor === nome).length;
+  const aviso = qtd > 0 ? `\n\n${qtd} funcionário(s) estão alocados nele e ficarão "Sem setor".` : '';
+  if (!confirm(`Excluir o setor "${nome}"?${aviso}`)) return;
+  try {
+    await deleteDoc(doc(db, 'setores_rh', id));
+    // Desaloca os funcionários que estavam nesse setor
+    const alocados = allFuncionarios.filter(f => f.setor === nome);
+    for (const f of alocados) {
+      await updateDoc(doc(db, 'funcionarios_rh', f.id), { setor: '' });
+    }
+    showToast(`🗑️ Setor "${nome}" removido.`, 'success');
+  } catch (err) {
+    showToast('❌ Erro ao excluir setor: ' + err.message, 'error');
+  }
 }
 
 function carregarFuncionarios() {
@@ -171,7 +270,7 @@ function carregarFuncionarios() {
 
   document.getElementById('search-func').addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
-    renderFuncionarios(allFuncionarios.filter(f => f.nome.toLowerCase().includes(q) || f.cargo.toLowerCase().includes(q)));
+    renderFuncionarios(allFuncionarios.filter(f => f.nome.toLowerCase().includes(q) || (f.cargo || '').toLowerCase().includes(q) || (f.setor || '').toLowerCase().includes(q)));
   });
 }
 
@@ -187,17 +286,9 @@ function renderFuncionarios(lista) {
     // Monta badges dos turnos
     const turnosBadges = (f.turnos && f.turnos.length)
       ? f.turnos.map(t =>
-          `<span class="func-badge func-badge-turno">${TURNO_LABEL[t.id]||t.id} ${t.entrada}–${t.saida} (${t.horas}h)</span>`
+          `<span class="func-badge func-badge-turno">${TURNO_LABEL[t.id]||t.id} ${t.entrada}–${t.saida} (${fmtHorasMin(t.horas || 0)})</span>`
         ).join('')
-      : `<span class="func-badge func-badge-turno">${TURNO_LABEL[f.turno]||f.turno} · ${f.horasTurno||0}h</span>`;
-
-    let dataNascStr = '';
-    if (f.nascimento) {
-      const parts = f.nascimento.split('-');
-      if (parts.length === 3) {
-        dataNascStr = `${parts[2]}/${parts[1]}/${parts[0]}`;
-      }
-    }
+      : `<span class="func-badge func-badge-turno">${TURNO_LABEL[f.turno]||f.turno} · ${fmtHorasMin(f.horasTurno || 0)}</span>`;
 
     return `
     <div class="func-card">
@@ -205,9 +296,8 @@ function renderFuncionarios(lista) {
       <div class="func-info">
         <div class="func-nome">${esc(f.nome)}</div>
         <div class="func-meta">
-          <span class="func-badge func-badge-cargo">${esc(f.cargo)}</span>
+          <span class="func-badge func-badge-cargo">${esc(f.setor || 'Sem setor')}</span>
           ${f.email ? `<span class="func-badge func-badge-email">${esc(f.email)}</span>` : ''}
-          ${dataNascStr ? `<span class="func-badge" style="background: rgba(249, 115, 22, 0.1); color: var(--ch-orange); border-color: rgba(249, 115, 22, 0.2);">${esc(dataNascStr)}</span>` : ''}
           ${turnosBadges}
         </div>
       </div>
@@ -264,6 +354,14 @@ function calcHorasTurno(entrada, saida) {
   return Math.round(diff / 60 * 100) / 100;
 }
 
+// Converte horas decimais (8.7) para exibição legível ("8h 42m")
+function fmtHorasMin(decimal) {
+  const totalMinutos = Math.round(Math.abs(decimal) * 60);
+  const h = Math.floor(totalMinutos / 60);
+  const m = totalMinutos % 60;
+  return m > 0 ? `${h}h ${m < 10 ? '0' : ''}${m}m` : `${h}h`;
+}
+
 function atualizarTotalTurnos() {
   let total = 0;
   ['manha','tarde','noite'].forEach(t => {
@@ -275,7 +373,7 @@ function atualizarTotalTurnos() {
     }
   });
   document.getElementById('turno-total-horas').textContent =
-    total > 0 ? `${total.toFixed(1)}h` : '0h';
+    total > 0 ? fmtHorasMin(total) : '0h';
 }
 
 function atualizarCalcTurno(id) {
@@ -284,7 +382,7 @@ function atualizarCalcTurno(id) {
     document.getElementById(`saida-${id}`).value
   );
   const el = document.getElementById(`calc-${id}`);
-  el.textContent = h > 0 ? `${h.toFixed(1)}h` : '—';
+  el.textContent = h > 0 ? fmtHorasMin(h) : '—';
   atualizarTotalTurnos();
 }
 
@@ -301,7 +399,85 @@ function resetarTurnos() {
   document.getElementById('turno-total-horas').textContent = '0h';
 }
 
+// Cache da logo da Fatec para os PDFs (dataURL + proporção)
+let logoCache = null;
+async function getLogoFatec() {
+  if (logoCache !== null) return logoCache;
+  try {
+    const blob = await (await fetch('/img/fateclogoazul.png')).blob();
+    const dataUrl = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = dataUrl;
+    });
+    logoCache = { dataUrl, ratio: img.naturalWidth / img.naturalHeight };
+  } catch (_) {
+    logoCache = false; // falhou; não tenta de novo
+  }
+  return logoCache;
+}
+
+// Relatório geral em PDF: nome, setor, carga diária e saldo do banco de horas
+async function gerarRelatorioGeral() {
+  if (!allFuncionarios.length) return;
+  if (!window.jspdf) { showToast('❌ Biblioteca de PDF não carregou — verifique a conexão.', 'error'); return; }
+
+  const fmtSaldo = (dec) => (dec < 0 ? '-' : '') + fmtHorasMin(dec);
+  const ativos = allFuncionarios.filter(f => f.ativo !== false);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const logo = await getLogoFatec();
+  if (logo) {
+    const h = 14;
+    const w = h * logo.ratio;
+    doc.addImage(logo.dataUrl, 'PNG', 14, 10, w, h);
+  }
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Relatório Geral de Banco de Horas', 14, 32);
+  doc.setFontSize(9);
+  doc.setFont(undefined, 'normal');
+  doc.text(`Emitido em ${new Date().toLocaleDateString('pt-BR')} · ${ativos.length} funcionário(s) ativo(s)`, 14, 38);
+
+  doc.autoTable({
+    startY: 43,
+    theme: 'grid',
+    head: [['Funcionário', 'Setor', 'Carga diária', 'Saldo banco de horas']],
+    body: ativos
+      .slice()
+      .sort((a, b) => (a.setor || 'zzz').localeCompare(b.setor || 'zzz') || (a.nome || '').localeCompare(b.nome || ''))
+      .map(f => [
+        f.nome || '—',
+        f.setor || '—',
+        fmtHorasMin(Number(f.horasTurno) || 0),
+        fmtSaldo(Number(f.totalHorasExtras) || 0)
+      ]),
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [15, 78, 184] },
+    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' } },
+    didParseCell: (hook) => {
+      // Saldo negativo em vermelho
+      if (hook.section === 'body' && hook.column.index === 3 && hook.cell.raw.startsWith('-')) {
+        hook.cell.styles.textColor = [185, 28, 28];
+      }
+    }
+  });
+
+  doc.save(`relatorio_geral_banco_horas_${new Date().toISOString().split('T')[0]}.pdf`);
+  showToast('📥 Relatório gerado com sucesso!', 'success');
+}
+
 function setupModalFuncionario() {
+  document.getElementById('btn-relatorio-geral').addEventListener('click', gerarRelatorioGeral);
   document.getElementById('btn-novo-func').addEventListener('click', () => {
     editingFuncId = null;
     document.getElementById('modal-func-titulo').textContent = 'Novo Funcionário';
@@ -344,9 +520,8 @@ function abrirModalEditar(id) {
   editingFuncId = id;
   document.getElementById('modal-func-titulo').textContent = 'Editar Funcionário';
   document.getElementById('func-nome').value = f.nome;
-  document.getElementById('func-cargo').value = f.cargo;
   document.getElementById('func-email').value = f.email || '';
-  document.getElementById('func-nascimento').value = f.nascimento || '';
+  document.getElementById('func-setor').value = f.setor || '';
   resetarTurnos();
 
   // Restaura turnos
@@ -369,9 +544,8 @@ function abrirModalEditar(id) {
 async function salvarFuncionario(e) {
   e.preventDefault();
   const nome    = document.getElementById('func-nome').value.trim();
-  const cargo   = document.getElementById('func-cargo').value.trim();
   const email   = document.getElementById('func-email').value.trim().toLowerCase();
-  const nascimento = document.getElementById('func-nascimento').value;
+  const setor   = document.getElementById('func-setor').value;
   const errEl   = document.getElementById('func-form-error');
   const btnText = document.getElementById('func-btn-text');
 
@@ -399,7 +573,7 @@ async function salvarFuncionario(e) {
   }
 
   btnText.textContent = 'Salvando...';
-  const dados = { nome, cargo, email, nascimento, turnos, horasTurno: Math.round(horasTurno * 100) / 100 };
+  const dados = { nome, email, setor, turnos, horasTurno: Math.round(horasTurno * 100) / 100 };
 
   try {
     if (editingFuncId) {

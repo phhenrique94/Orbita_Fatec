@@ -1,6 +1,7 @@
 import * as fb from './firebase-service.js';
 import { SimulationEngine } from './simulation-engine.js';
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from '../core/layout.js';
+import { getEffectiveLevel } from '../core/permissions.js';
 import { escapeHTML as esc } from '../core/security.js';
 
 // --- STATE MANAGEMENT ---
@@ -61,25 +62,22 @@ document.addEventListener('DOMContentLoaded', () => {
       currentUser = user;
       
       let role = 'visitante';
+      let meuOverrides = null;
       try {
-        // Buscar Cargo do Usuário
+        // Buscar Cargo do Usuário (e overrides individuais de permissão)
         const userSnap = await fb.getDoc(fb.doc(fb.db, 'users', user.uid));
         role = userSnap.exists() ? userSnap.data().role : 'visitante';
+        meuOverrides = userSnap.exists() ? (userSnap.data().permissoes || null) : null;
       } catch (err) {
         role = cached ? cached.role : 'visitante';
       }
 
-      // Buscar Permissões Globais
+      // Nível EFETIVO: override individual do usuário vence o do cargo
       let userLevel = 1;
       try {
         const permSnap = await fb.getDoc(fb.doc(fb.db, 'config', 'permissions'));
-        if (permSnap.exists()) {
-          const allPerms = permSnap.data();
-          const rawPerm = allPerms[role]?.ensalamento;
-          userLevel = (rawPerm !== undefined && typeof rawPerm === 'object')
-            ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-            : (parseInt(rawPerm) || 1);
-        }
+        const allPerms = permSnap.exists() ? permSnap.data() : {};
+        userLevel = getEffectiveLevel(allPerms[role] || {}, meuOverrides, 'ensalamento');
       } catch (err) {
         // Falha silenciosa para segurança
       }

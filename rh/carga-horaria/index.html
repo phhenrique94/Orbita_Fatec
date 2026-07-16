@@ -11,7 +11,7 @@
 <body>
   <div class="particles"></div>
 
-  <!-- Novo Auth Guard Padrão -->
+  <!-- Auth Guard Padrão -->
   <div id="auth-guard" class="layout-auth-guard">
     <div class="layout-spinner"></div>
     <h3 style="color:var(--text-main); font-weight:600;">Autenticando...</h3>
@@ -19,182 +19,153 @@
 
   <div id="app" class="layout-wrapper hidden">
     <!-- Sidebar injetada pelo layout.js -->
-    
+
     <div class="layout-main">
       <!-- Header injetado pelo layout.js -->
-      
+
       <div class="layout-content">
 
-  <!-- Main -->
   <main id="main-content" class="ch-main hidden">
 
-    <!-- Navegação por abas -->
-    <div class="ch-tab-nav">
-      <button class="ch-tab active" data-tab="lancar" id="tab-btn-lancar">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Lançar Horas
-      </button>
-      <button class="ch-tab" data-tab="historico" id="tab-btn-historico">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        Histórico
-      </button>
+    <!-- ===================== STATS ===================== -->
+    <div class="ch-stats" id="ch-stats">
+      <div class="ch-stat-item total">
+        <span class="ch-stat-val" id="stat-total-func">—</span>
+        <span class="ch-stat-lbl">Funcionários Ativos</span>
+      </div>
+      <div class="ch-stat-item positivo">
+        <span class="ch-stat-val" id="stat-saldo-pos">—</span>
+        <span class="ch-stat-lbl">Com Saldo Positivo</span>
+      </div>
+      <div class="ch-stat-item negativo">
+        <span class="ch-stat-val" id="stat-saldo-neg">—</span>
+        <span class="ch-stat-lbl">Devendo Horas</span>
+      </div>
+      <div class="ch-stat-item recessos">
+        <span class="ch-stat-val" id="stat-recessos">—</span>
+        <span class="ch-stat-lbl">Recessos Cadastrados</span>
+      </div>
     </div>
 
-    <!-- ===================== ABA: LANÇAR HORAS ===================== -->
-    <section id="tab-lancar" class="ch-section">
-      <!-- Seletor de modo -->
-      <div class="modo-selector">
-        <button class="modo-btn active" data-modo="evento" id="modo-btn-evento">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          Evento (Entrada/Saída)
-        </button>
-        <button class="modo-btn" data-modo="manual" id="modo-btn-manual">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Lançamento Manual
-        </button>
-      </div>
+    <!-- ===================== LANÇAR + RECESSOS ===================== -->
+    <div class="ch-grid-2col">
 
-      <!-- Modo: Evento -->
-      <div id="modo-evento">
-        <!-- Lista de Eventos (Visível inicialmente) -->
-        <div id="evento-lista-container">
-          <div class="evento-config">
-            <div class="evento-input-group">
-              <label class="form-label">Criar Novo Evento Multi-dias</label>
-              <div class="evento-input-row" style="flex-wrap: wrap;">
-                <input type="text" id="novo-nome-evento" class="ch-input" placeholder="Ex: Feira de Inovação..." style="flex: 2; min-width: 200px;">
-                <div style="display: flex; gap: 0.5rem; flex: 1; min-width: 280px;">
-                  <div style="flex: 1;"><label class="time-label" style="font-size:0.65rem; color:var(--ch-muted);">DATA INÍCIO</label><input type="date" id="evento-data-inicio" class="ch-input" style="padding: 0.6rem;"></div>
-                  <div style="flex: 1;"><label class="time-label" style="font-size:0.65rem; color:var(--ch-muted);">DATA TÉRMINO</label><input type="date" id="evento-data-fim" class="ch-input" style="padding: 0.6rem;"></div>
-                </div>
-                <button class="btn-action" id="btn-criar-evento" style="height: 44px; align-self: flex-end;">
-                  Criar
-                </button>
-              </div>
+      <!-- Lançar Horário -->
+      <section class="ch-card">
+        <h3 class="ch-card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Lançar Horário
+        </h3>
+        <form id="form-ponto">
+          <div class="ch-form-row">
+            <div class="ch-form-group" style="flex:2;">
+              <label class="ch-form-label">Funcionário *</label>
+              <select id="func-select" class="ch-input" required>
+                <option value="">Carregando funcionários...</option>
+              </select>
+            </div>
+            <div class="ch-form-group" style="flex:1;">
+              <label class="ch-form-label">Data *</label>
+              <input type="date" id="ponto-data" class="ch-input" required>
             </div>
           </div>
-          <div id="lista-eventos-ativos" class="ch-list" style="margin-top: 1rem;">
-            <div class="ch-loading">Carregando eventos ativos...</div>
+
+          <div class="ch-form-group">
+            <label class="ch-form-label">Operação *</label>
+            <div class="ch-tipo-op">
+              <label class="ch-tipo-label">
+                <input type="radio" name="tipo-op" value="adicionar" checked>
+                <div class="ch-tipo-card credito">➕ Adicionar Horas</div>
+              </label>
+              <label class="ch-tipo-label">
+                <input type="radio" name="tipo-op" value="retirar">
+                <div class="ch-tipo-card debito">➖ Retirar Horas</div>
+              </label>
+            </div>
           </div>
+
+          <div class="ch-form-row">
+            <div class="ch-form-group" style="flex:1;">
+              <label class="ch-form-label">Entrada <span class="ch-label-opcional">(opcional)</span></label>
+              <input type="time" id="ponto-entrada" class="ch-input">
+            </div>
+            <div class="ch-form-group" style="flex:1;">
+              <label class="ch-form-label">Saída <span class="ch-label-opcional">(opcional)</span></label>
+              <input type="time" id="ponto-saida" class="ch-input">
+            </div>
+          </div>
+
+          <div class="ch-form-group">
+            <label class="ch-form-label">Turno completo <span class="ch-label-opcional">(opcional — atalho para o turno inteiro, sem precisar de horário)</span></label>
+            <div class="ch-turnos-check" id="turnos-check">
+              <span class="ch-turnos-vazio">Selecione um funcionário para ver os turnos.</span>
+            </div>
+          </div>
+
+          <div class="ch-form-group">
+            <label class="ch-form-label">Motivo *</label>
+            <input type="text" id="ponto-descricao" class="ch-input" placeholder="Ex: Ficou até mais tarde no evento..." required>
+          </div>
+
+          <div id="ponto-preview" class="ch-ponto-preview hidden"></div>
+          <button type="submit" class="ch-btn-primary action-execute" id="btn-ponto">
+            Confirmar Lançamento
+          </button>
+        </form>
+      </section>
+
+      <!-- Recessos & Feriados -->
+      <section class="ch-card">
+        <h3 class="ch-card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Recessos &amp; Feriados
+        </h3>
+        <p class="ch-card-hint">Ao criar um recesso, as horas do dia são debitadas do banco de <strong>todos os funcionários ativos</strong>. Excluir o recesso devolve as horas.</p>
+        <form id="form-recesso" class="ch-recesso-form action-execute">
+          <input type="text" id="recesso-nome" class="ch-input" placeholder="Ex: Recesso de Julho" required style="flex:2; min-width:150px;">
+          <input type="date" id="recesso-data" class="ch-input" required style="flex:1; min-width:130px;">
+          <button type="submit" class="ch-btn-primary" id="btn-criar-recesso" style="white-space:nowrap;">Criar</button>
+        </form>
+        <div id="lista-recessos" class="ch-recesso-lista">
+          <div class="ch-loading">Carregando recessos...</div>
         </div>
+      </section>
 
-        <!-- Visão Interna do Evento (Oculta inicialmente) -->
-        <div id="evento-detalhe-container" class="hidden">
-          <div class="section-topbar" style="margin-bottom: 1.5rem;">
-            <div style="display: flex; align-items: center; gap: 1rem;">
-              <button class="btn-secondary" id="btn-voltar-lista" style="padding: 0.6rem 1rem;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                Voltar
-              </button>
-              <div>
-                <h2 class="section-title" id="detalhe-evento-nome" style="font-size: 1.2rem;">Nome do Evento</h2>
-                <span class="section-subtitle" id="detalhe-evento-periodo">Carregando período...</span>
-              </div>
-            </div>
-            <button class="icon-btn delete-btn" id="btn-excluir-evento-atual" title="Excluir Evento">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-            </button>
-          </div>
+    </div>
 
-          <div id="evento-status-bar" class="evento-status-bar" style="margin-bottom: 1rem;">
-            <div class="evento-legenda">
-              <span id="dia-atual-label" style="margin-right: 1.5rem; color: #10b981; font-weight: 800; font-size: 0.9rem; background: rgba(16,185,129,0.1); padding: 0.4rem 0.8rem; border-radius: 8px; border: 1px solid rgba(16,185,129,0.2);">DIA: --/--</span>
-              <span class="legenda-item"><span class="status-dot aguardando"></span> Aguardando</span>
-              <span class="legenda-item"><span class="status-dot andamento"></span> Em andamento</span>
-              <span class="legenda-item"><span class="status-dot finalizado"></span> Finalizado</span>
-            </div>
-          </div>
-
-          <div id="evento-lista-funcionarios" class="evento-lista">
-            <!-- Funcionários -->
-          </div>
-        </div>
-      </div>
-
-      <!-- Modo: Manual -->
-      <div id="modo-manual" class="hidden">
-        <div class="manual-form-card">
-          <h3 class="manual-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Lançamento Manual / Débito
-          </h3>
-          <form id="form-manual">
-            <div class="form-group">
-              <label class="form-label">Tipo de Operação *</label>
-              <div class="modo-selector" style="grid-template-columns: 1fr 1fr; margin-bottom: 0.5rem;">
-                <label class="tipo-op-label">
-                  <input type="radio" name="manual-tipo-op" value="credito" checked>
-                  <div class="tipo-op-card credito">➕ Adicionar Horas</div>
-                </label>
-                <label class="tipo-op-label">
-                  <input type="radio" name="manual-tipo-op" value="debito">
-                  <div class="tipo-op-card debito">➖ Retirar Horas</div>
-                </label>
-              </div>
-            </div>
-            <div class="form-group" style="position: relative;">
-              <label class="form-label">Buscar Funcionário *</label>
-              <input type="text" id="manual-func-search" class="ch-input" placeholder="Digite para buscar..." list="lista-funcs-datalist" autocomplete="off" required>
-              <datalist id="lista-funcs-datalist"></datalist>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Motivo / Descrição *</label>
-              <input type="text" id="manual-descricao" class="ch-input" placeholder="Ex: Uso de banco de horas, bônus..." required>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Quantidade de Horas *</label>
-              <input type="number" id="manual-horas" class="ch-input" placeholder="Ex: 2.5" min="0.1" step="0.1" required>
-            </div>
-            <button type="submit" class="btn-action" style="width:100%; justify-content:center;" id="btn-manual-submit">
-              Confirmar Lançamento
-            </button>
-          </form>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===================== ABA: HISTÓRICO ===================== -->
-    <section id="tab-historico" class="ch-section hidden">
-      <div class="historico-topbar">
-        <div class="historico-select-group">
-          <label class="form-label">Buscar Funcionário</label>
-          <input type="text" id="hist-func-search" class="ch-input" placeholder="Digite o nome do funcionário..." list="hist-funcs-datalist" autocomplete="off">
-          <datalist id="hist-funcs-datalist"></datalist>
-        </div>
-        <button class="btn-secondary" id="btn-exportar-csv" disabled>
+    <!-- ===================== EXTRATO ===================== -->
+    <section class="ch-card" id="extrato-section">
+      <div class="ch-extrato-topbar">
+        <h3 class="ch-card-title" style="margin-bottom:0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Extrato do Colaborador
+        </h3>
+        <button class="ch-btn-secondary" id="btn-exportar-pdf" disabled>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Exportar CSV
+          Exportar PDF
         </button>
       </div>
 
-      <!-- Card de resumo -->
-      <div id="hist-resumo" class="hist-resumo hidden">
-        <div class="resumo-card">
-          <div class="resumo-info">
-            <div class="resumo-avatar" id="resumo-avatar">?</div>
-            <div>
-              <div class="resumo-nome" id="resumo-nome">—</div>
-              <div class="resumo-cargo" id="resumo-cargo">—</div>
-            </div>
+      <!-- Card de saldo -->
+      <div id="saldo-card" class="ch-saldo-card hidden">
+        <div class="ch-saldo-info">
+          <div class="ch-saldo-avatar" id="saldo-avatar">?</div>
+          <div>
+            <div class="ch-saldo-nome" id="saldo-nome">—</div>
+            <div class="ch-saldo-cargo" id="saldo-cargo">—</div>
           </div>
-          <div class="resumo-stats">
-            <div class="resumo-stat">
-              <span class="resumo-stat-valor" id="resumo-total-horas">0h</span>
-              <span class="resumo-stat-label">Total de Horas Extras</span>
-            </div>
-            <div class="resumo-stat">
-              <span class="resumo-stat-valor" id="resumo-total-registros">0</span>
-              <span class="resumo-stat-label">Registros</span>
-            </div>
-          </div>
+        </div>
+        <div class="ch-saldo-valor-wrap">
+          <span class="ch-saldo-valor" id="saldo-valor">0h</span>
+          <span class="ch-saldo-label" id="saldo-label">Banco de Horas</span>
         </div>
       </div>
 
-      <!-- Lista de registros -->
-      <div id="hist-lista" class="hist-lista">
-        <div class="evento-placeholder">
+      <!-- Lista de lançamentos -->
+      <div id="extrato-lista" class="ch-extrato-lista">
+        <div class="ch-empty">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <p>Selecione um funcionário para ver o histórico.</p>
+          <p>Selecione um funcionário acima para ver o extrato.</p>
         </div>
       </div>
     </section>
@@ -204,9 +175,43 @@
     </div> <!-- Fim layout-main -->
   </div> <!-- Fim layout-wrapper -->
 
+  <!-- Modal de seleção de participantes do recesso -->
+  <div id="modal-recesso-func" class="ch-modal-overlay">
+    <div class="ch-modal-box ch-modal-func">
+      <h3 class="ch-modal-title">Participantes do Recesso</h3>
+      <p class="ch-modal-text" id="modal-recesso-info">Selecione quem terá as horas do dia debitadas do banco.</p>
+      <input type="text" id="modal-func-busca" class="ch-input" placeholder="Buscar funcionário..." style="margin-bottom:0.75rem;">
+      <label class="ch-func-selall">
+        <input type="checkbox" id="modal-func-todos" checked>
+        <span>Selecionar todos</span>
+      </label>
+      <div id="modal-func-lista" class="ch-func-lista"></div>
+      <div class="ch-modal-actions" style="margin-top:1.25rem;">
+        <button class="ch-btn-secondary" id="btn-cancelar-recesso-func">Cancelar</button>
+        <button class="ch-btn-primary" id="btn-confirmar-recesso-func" style="width:auto;">Criar Recesso</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de confirmação de exclusão de recesso -->
+  <div id="modal-excluir-recesso" class="ch-modal-overlay">
+    <div class="ch-modal-box">
+      <h3 class="ch-modal-title">Excluir recesso?</h3>
+      <p class="ch-modal-text" id="modal-excluir-texto">
+        Os débitos aplicados a todos os funcionários serão <strong>revertidos automaticamente</strong>.
+      </p>
+      <div class="ch-modal-actions">
+        <button class="ch-btn-secondary" id="btn-cancelar-excluir">Cancelar</button>
+        <button class="ch-btn-danger" id="btn-confirmar-excluir">Excluir e Reverter</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="ch-toast hidden"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
   <script type="module" src="/rh/carga-horaria/carga-horaria.js"></script>
 </body>
 </html>
