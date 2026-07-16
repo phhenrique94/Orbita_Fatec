@@ -271,13 +271,27 @@ export function setupLayout(user, role, activeModuleId, onLogout) {
         if (role !== 'adm_l1' && allPerms) {
           const rolePerms = allPerms[role] || {};
           const efetivas = { ...rolePerms, ...(userData?.permissoes || {}) };
-          localStorage.setItem('orbita_permissions', JSON.stringify(efetivas));
+          const novasJson = JSON.stringify(efetivas);
+          localStorage.setItem('orbita_permissions', novasJson);
 
           // Se a visualização do módulo ativo foi desativada, redireciona
           if (activeModuleId !== 'dashboard' && activeModuleId !== 'fidelidade') {
             if (getAccessLevel(efetivas[activeModuleId]) < 2) {
               window.location.href = '/meu-espaco/index.html';
+              return;
             }
+          }
+
+          // O menu foi montado com o cache antigo (ou sem cache). Se as
+          // permissões reais divergem, recarrega UMA vez para re-renderizar
+          // (flag de sessão evita loop de reloads).
+          if (novasJson !== (cachedPermsRaw || '')) {
+            if (!sessionStorage.getItem('orbita_perms_refresh')) {
+              sessionStorage.setItem('orbita_perms_refresh', '1');
+              window.location.reload();
+            }
+          } else {
+            sessionStorage.removeItem('orbita_perms_refresh');
           }
         }
       })
@@ -319,6 +333,12 @@ export function getCachedAuth() {
 
 export function setCachedAuth(user, role, token) {
   if (user) {
+    // Usuário diferente do anterior neste navegador: descarta o cache de
+    // permissões da conta antiga (evita menu de um usuário vazar para outro)
+    const uidAnterior = localStorage.getItem('orbita_uid');
+    if (uidAnterior && uidAnterior !== user.uid) {
+      localStorage.removeItem('orbita_permissions');
+    }
     localStorage.setItem('orbita_uid', user.uid);
     localStorage.setItem('orbita_email', user.email || '');
     localStorage.setItem('orbita_displayName', user.displayName || user.email?.split('@')[0] || '');
@@ -337,6 +357,7 @@ export function clearCachedAuth() {
   localStorage.removeItem('orbita_displayName');
   localStorage.removeItem('orbita_role');
   localStorage.removeItem('orbita_token');
+  localStorage.removeItem('orbita_permissions');
 }
 
 function showFirstAccessModal(token, apiBase) {
