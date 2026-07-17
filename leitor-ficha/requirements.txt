@@ -1,0 +1,4 @@
+flask>=3.0
+easyocr>=1.7
+pillow>=10.0
+numpy

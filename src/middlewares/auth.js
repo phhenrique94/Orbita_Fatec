@@ -114,7 +114,8 @@ const requireModulePermission = (moduleName) => {
                 ensalamento: 3,
                 'carga-horaria': 3,
                 turmas: 3,
-                avaliacoes: 3
+                avaliacoes: 3,
+                ferida: 3
             },
             ti: {
                 emprestimo: 3,
@@ -122,7 +123,8 @@ const requireModulePermission = (moduleName) => {
                 ensalamento: 3,
                 'carga-horaria': 1,
                 turmas: 1,
-                avaliacoes: 1
+                avaliacoes: 1,
+                ferida: 1
             },
             rh: {
                 emprestimo: 1,
@@ -130,7 +132,8 @@ const requireModulePermission = (moduleName) => {
                 ensalamento: 1,
                 'carga-horaria': 3,
                 turmas: 1,
-                avaliacoes: 1
+                avaliacoes: 1,
+                ferida: 1
             },
             visitante: {
                 emprestimo: 2,
@@ -138,7 +141,8 @@ const requireModulePermission = (moduleName) => {
                 ensalamento: 2,
                 'carga-horaria': 1,
                 turmas: 1,
-                avaliacoes: 1
+                avaliacoes: 1,
+                ferida: 1
             }
         };
 

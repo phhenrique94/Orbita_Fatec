@@ -74,5 +74,9 @@ firebase-debug.*.log
 .firebase/
 serviceAccountKey.json
 
+# Leitor de fichas (Python)
+leitor-ficha/.venv/
+__pycache__/
+*.pyc
 
 .vercel

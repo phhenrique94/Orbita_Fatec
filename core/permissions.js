@@ -2,7 +2,8 @@ export const CATEGORIES = {
   ti: "Gestão de T.I.",
   rh: "Recursos Humanos",
   admin: "Administrativo",
-  docencia: "Docência"
+  docencia: "Docência",
+  saude: "Gestão Saúde"
 };
 
 export const MODULES = {
@@ -80,17 +81,24 @@ export const MODULES = {
     title: "Avaliações",
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14h6"/><path d="M9 16h6"/><path d="M9 10h6"/><path d="M9 12h6"/></svg>`,
     url: "/avaliacoes/index.html"
+  },
+  ferida: {
+    id: "ferida",
+    category: "saude",
+    title: "Ferida",
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z"/><polyline points="7 12 9.5 12 11 9.5 13 14.5 14.5 12 17 12"/></svg>`,
+    url: "/saude/ferida/index.html"
   }
 };
 
 export const ROLE_PERMISSIONS = {
   adm_l1: {
     label: "ADM N1",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida"]
   },
   adm_l2: {
     label: "ADM N2",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida"]
   },
   ti: {
     label: "T.I.",
