@@ -11,6 +11,11 @@ const checkPermission = verifyToken.requireModulePermission('ferida');
 const COL_PACIENTES = 'ferida_pacientes';
 const TIPOS_FERIDA = ['Neuropatia Diabética', 'Úlcera Venosa', 'Úlcera Arterial', 'Úlcera Mista'];
 
+// Documento único com a lista de enfermeiros/estagiários ativos do ambulatório.
+// Mantida pelo ADM (não pelo próprio enfermeiro) — muda com frequência por conta
+// de estagiários do último ano de enfermagem entrando e saindo do rodízio.
+const DOC_ENFERMEIROS = db.collection('config').doc('ferida_enfermeiros');
+
 // ==========================================
 // PACIENTES
 // ==========================================
@@ -63,7 +68,7 @@ router.get('/pacientes/:id', verifyToken, checkPermission, async (req, res) => {
 // POST /api/ferida/pacientes - Cadastrar novo paciente
 router.post('/pacientes', verifyToken, checkPermission, async (req, res) => {
     try {
-        const { nome, dataNascimento, municipio, tipoFerida } = req.body;
+        const { nome, dataNascimento, municipio, tipoFerida, enfermeiro } = req.body;
 
         if (!nome || !nome.trim()) {
             return res.status(400).json({ error: 'O nome do paciente é obrigatório.' });
@@ -75,6 +80,7 @@ router.post('/pacientes', verifyToken, checkPermission, async (req, res) => {
             dataNascimento: dataNascimento || null,
             municipio: (municipio || '').trim(),
             tipoFerida: TIPOS_FERIDA.includes(tipoFerida) ? tipoFerida : null,
+            enfermeiro: (enfermeiro || '').trim(),
             createdAt: new Date().toISOString(),
             createdBy: req.user.uid,
             createdByName: req.user.name || req.user.email || ''
@@ -88,7 +94,7 @@ router.post('/pacientes', verifyToken, checkPermission, async (req, res) => {
 // PUT /api/ferida/pacientes/:id - Atualizar dados cadastrais do paciente
 router.put('/pacientes/:id', verifyToken, checkPermission, async (req, res) => {
     try {
-        const { nome, dataNascimento, municipio, tipoFerida } = req.body;
+        const { nome, dataNascimento, municipio, tipoFerida, enfermeiro } = req.body;
 
         if (!nome || !nome.trim()) {
             return res.status(400).json({ error: 'O nome do paciente é obrigatório.' });
@@ -98,6 +104,7 @@ router.put('/pacientes/:id', verifyToken, checkPermission, async (req, res) => {
             nome: nome.trim(),
             municipio: (municipio || '').trim(),
             tipoFerida: TIPOS_FERIDA.includes(tipoFerida) ? tipoFerida : null,
+            enfermeiro: (enfermeiro || '').trim(),
             updatedAt: new Date().toISOString(),
             updatedBy: req.user.uid
         };
@@ -137,6 +144,41 @@ router.delete('/pacientes/:id', verifyToken, checkPermission, async (req, res) =
 
         console.log(`[ferida] Paciente ${req.params.id} excluído por ${req.user.uid} (${req.user.email || ''})`);
         res.json({ message: 'Paciente excluído definitivamente, com todo o histórico.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
+// ENFERMEIROS (lista mantida pelo ADM, usada como padrão no cadastro)
+// ==========================================
+
+// GET /api/ferida/enfermeiros - Lista de enfermeiros/estagiários ativos
+router.get('/enfermeiros', verifyToken, checkPermission, async (req, res) => {
+    try {
+        const doc = await DOC_ENFERMEIROS.get();
+        res.json({ nomes: doc.exists ? (doc.data().nomes || []) : [] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/ferida/enfermeiros - Substitui a lista inteira (só ADM/quem tem edição no módulo)
+router.put('/enfermeiros', verifyToken, checkPermission, async (req, res) => {
+    try {
+        const { nomes } = req.body;
+        if (!Array.isArray(nomes)) {
+            return res.status(400).json({ error: 'Envie a lista de nomes.' });
+        }
+
+        const limpos = [...new Set(nomes.map(n => String(n || '').trim()).filter(Boolean))];
+
+        await DOC_ENFERMEIROS.set({
+            nomes: limpos,
+            updatedAt: new Date().toISOString(),
+            updatedBy: req.user.uid
+        });
+        res.json({ message: 'Lista de enfermeiros atualizada com sucesso!', nomes: limpos });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

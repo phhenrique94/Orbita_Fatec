@@ -579,7 +579,8 @@ h2.title { font-size: 18px; color: var(--petroleo); margin-bottom: 4px; }
   color: var(--petroleo);
   margin-bottom: 6px;
 }
-.form-group input {
+.form-group input,
+.form-group textarea {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--linha);
@@ -589,6 +590,7 @@ h2.title { font-size: 18px; color: var(--petroleo); margin-bottom: 4px; }
   font-size: 14.5px;
   color: var(--tinta);
 }
+.form-group textarea { resize: vertical; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 
 /* Toast */

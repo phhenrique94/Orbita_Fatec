@@ -32,6 +32,10 @@
                         <p class="page-subtitle">Ambulatório · todos os cadastros — busque por nome, município ou nascimento</p>
                     </div>
                     <div class="page-header-actions">
+                        <button class="btn-import action-execute" id="btn-gerenciar-enfermeiros">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            Enfermeiros
+                        </button>
                         <a class="btn-import" href="relatorio-geral.html" target="_blank" style="text-decoration:none;">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
                             Relatório geral
@@ -57,18 +61,34 @@
                                     <th>Tipo de ferida</th>
                                     <th>Nascimento</th>
                                     <th>Município</th>
+                                    <th>Enfermeiro(a)</th>
                                     <th>Cadastrado em</th>
                                     <th>Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="tabela-pacientes">
-                                <tr><td colspan="6" class="pac-lista-msg">Carregando...</td></tr>
+                                <tr><td colspan="7" class="pac-lista-msg">Carregando...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Modal: Gerenciar enfermeiros -->
+    <div id="modal-enfermeiros" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Enfermeiros do ambulatório</h2>
+            <p class="hint">Um nome por linha. Essa lista é o padrão sugerido no cadastro do paciente — inclua aqui estagiários do último ano conforme entrarem no rodízio, e remova quem sair.</p>
+            <div class="form-group">
+                <textarea id="enf-lista" rows="10" placeholder="Ex:&#10;Maria da Silva&#10;João Pereira (estagiário)"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn ghost" id="btn-cancelar-enfermeiros">Cancelar</button>
+                <button type="button" class="btn primary" id="btn-salvar-enfermeiros">Salvar</button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast -->

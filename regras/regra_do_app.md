@@ -115,6 +115,23 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 
 ## 8. Histórico de alterações
 
+### [2026-07-17] Novo módulo: Almoxarifado Feridas (Gestão Saúde)
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/src/rotas/almoxarifado-feridas.js` (CRUD de materiais em `almoxarifado_feridas_itens` + subcoleção `movimentacoes`; entrada/saída de estoque em transação Firestore para evitar corrida entre usuárias simultâneas, bloqueando saída maior que o disponível; autoria obrigatória em cada movimentação)
+  - `/saude/almoxarifado-feridas/index.html`, `app.js`, `almoxarifado.css` (Grid de materiais com destaque visual de estoque baixo, busca e filtro "só estoque baixo"; modal de cadastro/edição; modal de movimentação com toggle entrada/saída e histórico)
+- Arquivos alterados:
+  - `/core/permissions.js` (Módulo `almoxarifado-feridas` na categoria Gestão Saúde, atribuído a ADM N1/N2)
+  - `/src/middlewares/auth.js` (Permissões padrão: ADM N2 = 3; TI, RH e Visitante = 1)
+  - `/api/index.js` (Registro das rotas)
+  - Nota: `/usuarios/app.js` já deriva a lista de módulos gerenciáveis direto de `core/permissions.js` — nenhuma alteração necessária ali.
+- Tipo: Novo Módulo
+- Motivo: Controlar o estoque de materiais de curativo do ambulatório (hidrogel, espuma, gaze etc.), com histórico de entradas/saídas e alerta de estoque baixo, seguindo o mesmo padrão RBAC/autoria do módulo Ferida.
+- Impacto: Novas coleções Firestore `almoxarifado_feridas_itens` e subcoleção `movimentacoes`. Nenhuma integração automática com o módulo Ferida (a baixa de estoque é manual, por decisão explícita ao escopo).
+- Como testar: Gestão Saúde → Almoxarifado Feridas → cadastrar material com estoque mínimo, registrar entrada e saída, verificar o card ficar vermelho quando a quantidade cai abaixo do mínimo, e que uma saída maior que o disponível é bloqueada com aviso.
+- Como reverter: Remover a pasta `/saude/almoxarifado-feridas`, a rota `/src/rotas/almoxarifado-feridas.js`, o registro em `/api/index.js` e as referências em `/core/permissions.js` e `/src/middlewares/auth.js`.
+
 ### [2026-07-17] Ferida: impressão do relatório encostava na borda física do papel
 - Autor: Claude Code
 - Branch: main

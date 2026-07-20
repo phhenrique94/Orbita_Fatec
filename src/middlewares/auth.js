@@ -7,6 +7,11 @@ let permissionsCache = {
 };
 const CACHE_TTL = 60 * 1000; // 1 minuto de TTL
 
+// Cache em memória do cargo/permissões por usuária, para não ler o Firestore
+// em toda requisição (evita estourar cota de leituras em uso intenso).
+const userRoleCache = new Map(); // uid -> { role, permissoes, lastFetched }
+const USER_CACHE_TTL = 60 * 1000; // 1 minuto de TTL
+
 // Nível de acesso normalizado com retrocompatibilidade:
 // inteiro (1/2/3) ou formato legado { view, execute }
 const getAccessLevel = (perm) => {
@@ -28,23 +33,43 @@ const verifyToken = async (req, res, next) => {
 
     const idToken = bearerHeader.split('Bearer ')[1];
 
+    // 1. Validação do token JWT — falha aqui é realmente "token inválido/expirado"
+    let decodedToken;
     try {
-        const decodedToken = await auth.verifyIdToken(idToken);
-        req.user = decodedToken; // Adiciona os dados básicos
-        
-        // 🚨 CAMADA DE SEGURANÇA EXTRA: Buscar o cargo real no Banco de Dados
-        const { db } = require('../firebase');
-        const userDoc = await db.collection('users').doc(req.user.uid).get();
-        const userData = userDoc.exists ? userDoc.data() : {};
-        req.user.role = userData.role || 'visitante';
-        // Permissões específicas do usuário (override por módulo) — sempre
-        // vencem as do cargo quando definidas
-        req.user.permissoes = userData.permissoes || null;
-
-        next();
+        decodedToken = await auth.verifyIdToken(idToken);
     } catch (error) {
         console.error('Erro ao verificar o token:', error);
         return res.status(401).json({ error: 'Token inválido ou expirado.' });
+    }
+    req.user = decodedToken;
+
+    // 2. Cargo/permissões no Firestore — cacheado por uid (1 min) para reduzir
+    // leituras. Falha aqui (ex.: cota excedida) NÃO é problema de token —
+    // reportar separadamente para não mandar a usuária relogar à toa.
+    try {
+        const cached = userRoleCache.get(req.user.uid);
+        const now = Date.now();
+        if (cached && (now - cached.lastFetched) < USER_CACHE_TTL) {
+            req.user.role = cached.role;
+            req.user.permissoes = cached.permissoes;
+        } else {
+            const { db } = require('../firebase');
+            const userDoc = await db.collection('users').doc(req.user.uid).get();
+            const userData = userDoc.exists ? userDoc.data() : {};
+            req.user.role = userData.role || 'visitante';
+            // Permissões específicas do usuário (override por módulo) — sempre
+            // vencem as do cargo quando definidas
+            req.user.permissoes = userData.permissoes || null;
+            userRoleCache.set(req.user.uid, { role: req.user.role, permissoes: req.user.permissoes, lastFetched: now });
+        }
+        next();
+    } catch (error) {
+        console.error('Erro ao buscar cargo do usuário no Firestore:', error);
+        // Cota excedida (Firestore) usa gRPC code 8 = RESOURCE_EXHAUSTED
+        if (error.code === 8) {
+            return res.status(503).json({ error: 'Limite de acesso ao banco de dados atingido no momento. Tente novamente em alguns minutos.' });
+        }
+        return res.status(503).json({ error: 'Não foi possível verificar seu cargo agora. Tente novamente em instantes.' });
     }
 };
 
@@ -115,7 +140,8 @@ const requireModulePermission = (moduleName) => {
                 'carga-horaria': 3,
                 turmas: 3,
                 avaliacoes: 3,
-                ferida: 3
+                ferida: 3,
+                'almoxarifado-feridas': 3
             },
             ti: {
                 emprestimo: 3,
@@ -124,7 +150,8 @@ const requireModulePermission = (moduleName) => {
                 'carga-horaria': 1,
                 turmas: 1,
                 avaliacoes: 1,
-                ferida: 1
+                ferida: 1,
+                'almoxarifado-feridas': 1
             },
             rh: {
                 emprestimo: 1,
@@ -133,7 +160,8 @@ const requireModulePermission = (moduleName) => {
                 'carga-horaria': 3,
                 turmas: 1,
                 avaliacoes: 1,
-                ferida: 1
+                ferida: 1,
+                'almoxarifado-feridas': 1
             },
             visitante: {
                 emprestimo: 2,
@@ -142,7 +170,8 @@ const requireModulePermission = (moduleName) => {
                 'carga-horaria': 1,
                 turmas: 1,
                 avaliacoes: 1,
-                ferida: 1
+                ferida: 1,
+                'almoxarifado-feridas': 1
             }
         };
 

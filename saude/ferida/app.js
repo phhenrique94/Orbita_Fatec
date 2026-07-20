@@ -177,24 +177,75 @@ function initPaginaPacientes() {
     clearTimeout(buscaPacienteTimer);
     buscaPacienteTimer = setTimeout(() => buscarEExibirPacientes(input.value.trim()), 300);
   });
+  setupEnfermeirosModal();
+}
+
+// ==========================================
+// ENFERMEIROS — lista mantida pelo ADM, usada como padrão no cadastro
+// ==========================================
+let enfermeirosCache = null;
+
+async function carregarEnfermeiros(forcar = false) {
+  if (enfermeirosCache && !forcar) return enfermeirosCache;
+  const resp = await apiFetch('/ferida/enfermeiros');
+  enfermeirosCache = Array.isArray(resp.nomes) ? resp.nomes : [];
+  return enfermeirosCache;
+}
+
+function setupEnfermeirosModal() {
+  const modal = document.getElementById('modal-enfermeiros');
+  const textarea = document.getElementById('enf-lista');
+  if (!modal || !textarea) return;
+
+  document.getElementById('btn-gerenciar-enfermeiros')?.addEventListener('click', async () => {
+    textarea.value = 'Carregando...';
+    modal.classList.remove('hidden');
+    try {
+      const nomes = await carregarEnfermeiros(true);
+      textarea.value = nomes.join('\n');
+    } catch (err) {
+      textarea.value = '';
+      showToast('Erro ao carregar enfermeiros: ' + err.message, 'error');
+    }
+  });
+  document.getElementById('btn-cancelar-enfermeiros')?.addEventListener('click', () => modal.classList.add('hidden'));
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+  document.getElementById('btn-salvar-enfermeiros')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-salvar-enfermeiros');
+    const nomes = textarea.value.split('\n').map(n => n.trim()).filter(Boolean);
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    try {
+      const resp = await apiFetch('/ferida/enfermeiros', { method: 'PUT', body: JSON.stringify({ nomes }) });
+      enfermeirosCache = resp.nomes;
+      modal.classList.add('hidden');
+      showToast('Lista de enfermeiros atualizada');
+    } catch (err) {
+      showToast('Erro ao salvar: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Salvar';
+    }
+  });
 }
 
 async function buscarEExibirPacientes(termo) {
   const tbody = document.getElementById('tabela-pacientes');
-  tbody.innerHTML = `<tr><td colspan="5" class="pac-lista-msg">Buscando...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="7" class="pac-lista-msg">Buscando...</td></tr>`;
   try {
     const qs = termo ? `?busca=${encodeURIComponent(termo)}` : '';
     const lista = await apiFetch(`/ferida/pacientes${qs}`);
     renderTabelaPacientes(lista);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" class="pac-lista-msg">Erro ao buscar: ${esc(err.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="pac-lista-msg">Erro ao buscar: ${esc(err.message)}</td></tr>`;
   }
 }
 
 function renderTabelaPacientes(lista) {
   const tbody = document.getElementById('tabela-pacientes');
   if (!lista.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="pac-lista-msg">Nenhum paciente encontrado.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="pac-lista-msg">Nenhum paciente encontrado.</td></tr>`;
     return;
   }
   tbody.innerHTML = lista.map(p => {
@@ -207,6 +258,7 @@ function renderTabelaPacientes(lista) {
         <td>${esc(p.tipoFerida || '—')}</td>
         <td>${nascimento}${idade !== null ? ` (${idade} anos)` : ''}</td>
         <td>${esc(p.municipio || '—')}</td>
+        <td>${esc(p.enfermeiro || '—')}</td>
         <td>${cadastro}</td>
         <td class="pac-lista-acoes">
           <a href="index.html?paciente=${p.id}" title="Abrir ficha">
@@ -554,6 +606,7 @@ async function selecionarPaciente(paciente) {
   if (!pacienteAtual) {
     document.getElementById('meta-municipio').textContent = '—';
     document.getElementById('meta-tipo-ferida').textContent = '—';
+    document.getElementById('meta-enfermeiro').textContent = '—';
     badge.classList.add('hidden');
     btnFichas.classList.add('hidden');
     btnHistorico.classList.add('hidden');
@@ -565,6 +618,7 @@ async function selecionarPaciente(paciente) {
 
   document.getElementById('meta-municipio').textContent = pacienteAtual.municipio || '—';
   document.getElementById('meta-tipo-ferida').textContent = pacienteAtual.tipoFerida || '—';
+  document.getElementById('meta-enfermeiro').textContent = pacienteAtual.enfermeiro || '—';
   const linkRelatorio = document.getElementById('btn-relatorio-paciente');
   if (linkRelatorio) linkRelatorio.href = `relatorio.html?paciente=${pacienteAtual.id}`;
 
@@ -596,10 +650,33 @@ async function selecionarPaciente(paciente) {
   renderTimeline(true);
 }
 
+// Preenche o <select> de enfermeiro com a lista mantida pelo ADM, preservando
+// o valor atual do paciente mesmo se o nome não estiver mais na lista (ex.:
+// estagiário que já saiu do rodízio) — não perde o dado histórico.
+function preencherSelectEnfermeiro(valorAtual) {
+  const sel = document.getElementById('pac-enfermeiro');
+  if (!sel) return;
+  const alvo = (valorAtual || '').trim();
+  sel.innerHTML = '<option value="">Não informado</option>';
+  (enfermeirosCache || []).forEach(nome => {
+    const opt = document.createElement('option');
+    opt.textContent = nome;
+    sel.appendChild(opt);
+  });
+  const existe = [...sel.options].some(o => o.textContent === alvo);
+  if (alvo && !existe) {
+    const opt = document.createElement('option');
+    opt.textContent = alvo;
+    opt.setAttribute('data-extra', '1');
+    sel.appendChild(opt);
+  }
+  sel.value = alvo;
+}
+
 function setupPacienteModal() {
   const modal = document.getElementById('modal-paciente');
 
-  const abrirModalPaciente = (paciente) => {
+  const abrirModalPaciente = async (paciente) => {
     document.getElementById('form-paciente').reset();
     fichasPendentes = [];
     renderThumbsPendentes();
@@ -609,6 +686,12 @@ function setupPacienteModal() {
     document.getElementById('pac-nome').value = editando ? (paciente.nome || '') : '';
     selecionarMunicipio('pac-municipio', editando ? paciente.municipio : 'Ivaiporã');
     document.getElementById('pac-tipo-ferida').value = editando ? (paciente.tipoFerida || '') : '';
+    try {
+      await carregarEnfermeiros();
+    } catch (err) {
+      showToast('Não foi possível carregar a lista de enfermeiros: ' + err.message, 'error');
+    }
+    preencherSelectEnfermeiro(editando ? paciente.enfermeiro : '');
     document.getElementById('modal-paciente-title').textContent = editando ? 'Editar Paciente' : 'Novo Paciente';
     document.getElementById('btn-salvar-paciente').textContent = editando ? 'Salvar alterações' : 'Cadastrar';
     // No modo edição as fichas antigas são gerenciadas pela galeria própria
@@ -646,7 +729,8 @@ function setupPacienteModal() {
     const dados = {
       nome: document.getElementById('pac-nome').value.trim(),
       municipio: document.getElementById('pac-municipio').value.trim(),
-      tipoFerida: document.getElementById('pac-tipo-ferida').value || null
+      tipoFerida: document.getElementById('pac-tipo-ferida').value || null,
+      enfermeiro: document.getElementById('pac-enfermeiro').value.trim()
     };
 
     btn.disabled = true;
