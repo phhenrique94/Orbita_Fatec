@@ -95,17 +95,24 @@ export const MODULES = {
     title: "Almoxarifado Feridas",
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>`,
     url: "/saude/almoxarifado-feridas/index.html"
+  },
+  "almoxarifado-saude": {
+    id: "almoxarifado-saude",
+    category: "saude",
+    title: "Almoxarifado Saúde",
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 22V12h6v10"/><path d="M14 2H8a2 2 0 0 0-2 2v6l-3 3v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7l-3-3V4a2 2 0 0 0-2-2z"/></svg>`,
+    url: "/saude/almoxarifado-saude/index.html"
   }
 };
 
 export const ROLE_PERMISSIONS = {
   adm_l1: {
     label: "ADM N1",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas", "almoxarifado-saude"]
   },
   adm_l2: {
     label: "ADM N2",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas", "almoxarifado-saude"]
   },
   ti: {
     label: "T.I.",

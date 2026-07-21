@@ -115,6 +115,24 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 
 ## 8. Histórico de alterações
 
+### [2026-07-21] Novo módulo: Almoxarifado Saúde (Gestão Saúde)
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/src/rotas/almoxarifado-saude.js` (API sobre as coleções `almoxarifado_itens`, `almoxarifado_lotes` e `almoxarifado_movimentacoes` — já existentes no Firestore, importadas previamente de um levantamento físico de patrimônio e consumíveis de ~21 salas/laboratórios do setor de Saúde, mas sem nenhum módulo até então. CRUD de itens; para `categoria: "Consumível"`, entrada/saída transacional por lote com validade opcional (FEFO) e alerta de vencendo/vencido; para `categoria: "Permanente"` (patrimônio), ajuste direto de quantidade via conferência, sem lote/motivo. Endpoint de stats com contagens agregadas via `count()` do Firestore, evitando varrer os 1500+ itens a cada carregamento)
+  - `/saude/almoxarifado-saude/index.html`, `app.js`, `almoxarifado-saude.css` (Duas abas — Consumíveis e Patrimônio — com resumo, busca, filtro por localização/estoque baixo/vencimento; modal de novo/editar item; modal de movimentação com lotes e histórico para Consumível; modal de conferência simples para Patrimônio)
+- Arquivos alterados:
+  - `/core/permissions.js` (Módulo `almoxarifado-saude` na categoria Gestão Saúde, atribuído a ADM N1/N2)
+  - `/src/middlewares/auth.js` (Permissões padrão: ADM N2 = 3; TI, RH e Visitante = 1, mesmo padrão do Almoxarifado Feridas)
+  - `/api/index.js` (Registro da rota)
+  - `/firestore.indexes.json` (2 índices compostos novos — `almoxarifado_itens` por `categoria`+`nome` e `almoxarifado_movimentacoes` por `itemId`+`realizadoEm` — já publicados em produção via `firebase deploy --only firestore:indexes`)
+  - Nota: `/usuarios/app.js` já deriva a lista de módulos gerenciáveis direto de `core/permissions.js` — nenhuma alteração necessária ali.
+- Tipo: Novo Módulo
+- Motivo: Os dados de patrimônio (equipamentos por laboratório) e consumíveis (materiais por sala, com conferência periódica) do setor de Saúde já haviam sido importados para o Firestore a partir de uma planilha/documento de levantamento físico, mas não existia tela nem API para gerenciá-los.
+- Impacto: Nenhuma coleção nova — o módulo passa a operar sobre dados já existentes (`almoxarifado_itens`: 1520 itens; `almoxarifado_lotes`: 1434 lotes, todos sem validade definida até aqui). A lista de localizações é fixa no backend (`LOCALIZACOES`), batendo com os valores já usados nos dados importados. Limite de "vencendo" fixado em 60 dias (constante `DIAS_VENCENDO`, ajustável só no código por ora).
+- Como testar: Acessar Almoxarifado Saúde → aba Consumíveis, cadastrar item novo com quantidade inicial e validade, dar entrada (lote novo e lote existente) e saída (escolhendo o lote), conferir que o resumo (estoque baixo/vencendo/vencidos) atualiza; na aba Patrimônio, cadastrar item e usar "Conferir" para ajustar a quantidade contada; excluir um item de teste em cada aba e confirmar que lotes/movimentações somem junto.
+- Como reverter: Remover a pasta `/saude/almoxarifado-saude`, a rota `/src/rotas/almoxarifado-saude.js`, o registro em `/api/index.js`, as referências em `/core/permissions.js` e `/src/middlewares/auth.js`, e os 2 índices compostos em `/firestore.indexes.json` (também removê-los do console do Firebase, já que índices publicados não são revertidos automaticamente).
+
 ### [2026-07-17] Novo módulo: Almoxarifado Feridas (Gestão Saúde)
 - Autor: Claude Code
 - Branch: main

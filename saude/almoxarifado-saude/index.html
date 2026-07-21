@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Almoxarifado Saúde - Órbita FATEC</title>
+    <link rel="icon" type="image/png" href="/img/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/core/layout.css">
+    <link rel="stylesheet" href="/saude/almoxarifado-saude/almoxarifado-saude.css">
+</head>
+<body>
+    <div id="auth-guard" class="layout-auth-guard">
+        <div class="layout-spinner"></div>
+        <h3 style="color:var(--text-main); font-weight:600;">Autenticando...</h3>
+    </div>
+
+    <div id="app" class="layout-wrapper hidden">
+        <main class="layout-main">
+            <div class="layout-content alx-content">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Almoxarifado Saúde</h1>
+                        <p class="page-subtitle">Consumíveis e patrimônio dos laboratórios e salas do setor de Saúde</p>
+                    </div>
+                    <div class="page-header-actions">
+                        <button class="btn-primary action-execute" id="btn-novo-item">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Novo Item
+                        </button>
+                    </div>
+                </div>
+
+                <div class="alx-tabs">
+                    <button class="alx-tab on" data-categoria="Consumível" id="tab-consumivel">Consumíveis</button>
+                    <button class="alx-tab" data-categoria="Permanente" id="tab-permanente">Patrimônio</button>
+                </div>
+
+                <div class="alx-resumo" id="alx-resumo"></div>
+
+                <div class="filters-bar">
+                    <div class="search-wrap">
+                        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" id="search-itens" class="search-input" placeholder="Buscar item...">
+                    </div>
+                    <select id="filtro-localizacao" class="select-localizacao">
+                        <option value="">Todas as localizações</option>
+                    </select>
+                    <label class="chk-baixo">
+                        <input type="checkbox" id="filtro-baixo-estoque">
+                        Só estoque baixo
+                    </label>
+                    <label class="chk-baixo action-consumivel">
+                        <input type="checkbox" id="filtro-vencimento">
+                        Só vencendo/vencido
+                    </label>
+                </div>
+
+                <div id="itens-list" class="alx-grid">
+                    <div class="empty-state"><p>Carregando itens...</p></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Novo/Editar Item -->
+    <div id="modal-item" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 id="modal-item-title">Novo Item</h2>
+            <form id="form-item">
+                <input type="hidden" id="item-id">
+                <input type="hidden" id="item-categoria">
+                <div class="form-group">
+                    <label>Nome do item *</label>
+                    <input type="text" id="item-nome" placeholder="Ex: Seringa 10ml, Microscópio binocular" required>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Unidade de medida *</label>
+                        <input type="text" id="item-unidade" placeholder="Ex: unidade, caixa, frasco" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Localização/Sala *</label>
+                        <select id="item-localizacao" required></select>
+                    </div>
+                </div>
+                <div class="rev-grid2" id="grupo-estoque-minimo">
+                    <div class="form-group">
+                        <label>Estoque mínimo</label>
+                        <input type="number" id="item-estoque-minimo" min="0" placeholder="0">
+                    </div>
+                    <div class="form-group" id="grupo-qtd-inicial">
+                        <label>Quantidade inicial</label>
+                        <input type="number" id="item-qtd-inicial" min="0" placeholder="0">
+                    </div>
+                </div>
+                <div class="form-group action-consumivel" id="grupo-validade-inicial">
+                    <label>Validade do lote inicial (opcional)</label>
+                    <input type="date" id="item-validade-inicial">
+                </div>
+                <div class="form-group">
+                    <label>Observação</label>
+                    <input type="text" id="item-observacao" placeholder="Opcional">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-cancelar-item">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-salvar-item">Cadastrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Movimentação (entrada/saída de Consumível) + histórico -->
+    <div id="modal-mov" class="modal-overlay hidden">
+        <div class="modal-content modal-mov-content">
+            <h2 id="modal-mov-title">Movimentar estoque</h2>
+
+            <form id="form-mov">
+                <input type="hidden" id="mov-item-id">
+                <div class="mov-tipo-toggle">
+                    <button type="button" class="mov-tipo-btn on" data-tipo="entrada" id="btn-tipo-entrada">↓ Entrada</button>
+                    <button type="button" class="mov-tipo-btn" data-tipo="saida" id="btn-tipo-saida">↑ Saída</button>
+                </div>
+
+                <div class="form-group" id="grupo-lote-saida">
+                    <label>De qual lote? *</label>
+                    <select id="mov-lote-saida"></select>
+                </div>
+
+                <div class="form-group" id="grupo-lote-entrada-modo">
+                    <label>Destino da entrada</label>
+                    <div class="mov-tipo-toggle">
+                        <button type="button" class="mov-tipo-btn on" data-modo="novo" id="btn-entrada-novo-lote">Novo lote</button>
+                        <button type="button" class="mov-tipo-btn" data-modo="existente" id="btn-entrada-lote-existente">Lote existente</button>
+                    </div>
+                </div>
+                <div class="rev-grid2" id="grupo-novo-lote">
+                    <div class="form-group">
+                        <label>Nome do lote</label>
+                        <input type="text" id="mov-lote-nome" placeholder="Opcional">
+                    </div>
+                    <div class="form-group">
+                        <label>Validade</label>
+                        <input type="date" id="mov-validade">
+                    </div>
+                </div>
+                <div class="form-group hidden" id="grupo-lote-entrada-existente">
+                    <label>Lote *</label>
+                    <select id="mov-lote-entrada"></select>
+                </div>
+
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Quantidade *</label>
+                        <input type="number" id="mov-quantidade" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Disponível no item</label>
+                        <input type="text" id="mov-disponivel" disabled>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Motivo *</label>
+                    <input type="text" id="mov-motivo" placeholder="Ex: Compra, doação, uso em aula/atendimento" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-fechar-mov">Fechar</button>
+                    <button type="submit" class="btn-primary" id="btn-registrar-mov">Registrar</button>
+                </div>
+            </form>
+
+            <div class="mov-historico">
+                <span class="eyebrow">Lotes atuais</span>
+                <div id="mov-lotes-atuais" class="mov-lotes-atuais"></div>
+                <span class="eyebrow" style="margin-top:14px;">Histórico</span>
+                <div id="mov-lista" class="mov-lista"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Conferência (ajuste direto de quantidade de Patrimônio) -->
+    <div id="modal-conferencia" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 id="modal-conferencia-title">Conferir quantidade</h2>
+            <form id="form-conferencia">
+                <input type="hidden" id="conf-item-id">
+                <div class="form-group">
+                    <label>Quantidade contada *</label>
+                    <input type="number" id="conf-quantidade" min="0" required>
+                </div>
+                <p class="hint" id="conf-ultima-info"></p>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-cancelar-conferencia">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-salvar-conferencia">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script type="module" src="/saude/almoxarifado-saude/app.js"></script>
+</body>
+</html>

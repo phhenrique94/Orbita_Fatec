@@ -1,0 +1,172 @@
+/* ==========================================
+   Almoxarifado Saúde — Gestão Saúde
+   Mesma identidade visual do módulo Ferida /
+   Almoxarifado Feridas (petróleo/turquesa) —
+   todos na categoria "Gestão Saúde" do Órbita.
+   ========================================== */
+:root {
+  --petroleo: #1B3A4B;
+  --petroleo-2: #24506a;
+  --turquesa: #34B3A0;
+  --turquesa-d: #2a9080;
+  --text-main: #0B1F33;
+  --text-secondary: #6a7a84;
+  --muted: #6a7a84;
+  --linha: #dde5e9;
+  --card: #ffffff;
+  --silhueta: #dce8e6;
+  --danger: #C0554A;
+  --alerta: #C9832F;
+}
+
+.alx-content { font-family: 'Source Sans 3', system-ui, sans-serif; color: var(--text-main); }
+.alx-content h1, .alx-content h2, .alx-content .btn-primary, .alx-content .btn-secondary,
+.alx-content label, .alx-content .eyebrow { font-family: 'Plus Jakarta Sans', sans-serif; }
+
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.page-title { font-size: 1.45rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.01em; }
+.page-subtitle { font-size: 0.9rem; color: var(--text-secondary); margin-top: 2px; }
+
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--turquesa); color: #fff; border: none; border-radius: 10px;
+  padding: 10px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: background .15s;
+}
+.btn-primary:hover { background: var(--turquesa-d); }
+.btn-secondary {
+  background: #fff; border: 1px solid var(--linha); color: #41525b;
+  border-radius: 10px; padding: 10px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer;
+}
+.btn-secondary:hover { border-color: var(--turquesa); }
+
+/* Abas Consumíveis / Patrimônio */
+.alx-tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--linha); }
+.alx-tab {
+  background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-right: 18px;
+  font-size: 0.92rem; font-weight: 700; color: var(--text-secondary); cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.alx-tab.on { color: var(--petroleo); border-bottom-color: var(--turquesa); }
+
+/* Resumo */
+.alx-resumo { display: flex; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.alx-resumo-card {
+  flex: 1; min-width: 160px; background: var(--card); border: 1px solid var(--linha);
+  border-radius: 14px; padding: 14px 18px;
+}
+.alx-resumo-card b { display: block; font-size: 26px; color: var(--petroleo); font-family: 'Plus Jakarta Sans', sans-serif; }
+.alx-resumo-card.baixo b { color: var(--danger); }
+.alx-resumo-card.alerta b { color: var(--alerta); }
+.alx-resumo-card span { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+
+.filters-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.search-wrap { position: relative; flex: 1; min-width: 220px; }
+.search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); }
+.search-input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--linha); border-radius: 10px;
+  padding: 10px 12px 10px 38px; font-size: 14px; font-family: 'Source Sans 3', sans-serif;
+}
+.select-localizacao {
+  border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; font-size: 13.5px;
+  font-family: 'Source Sans 3', sans-serif; color: var(--text-main); background: #fff; min-width: 200px;
+}
+.chk-baixo { display: flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--text-main); cursor: pointer; user-select: none; white-space: nowrap; }
+
+.alx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.empty-state { grid-column: 1 / -1; text-align: center; padding: 40px 0; color: var(--text-secondary); }
+
+.item-card {
+  background: var(--card); border: 1px solid var(--linha); border-radius: 14px; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.item-card.baixo { border-color: var(--danger); background: #fdf5f4; }
+.item-card-nome { font-size: 15px; font-weight: 700; color: var(--text-main); }
+.item-card-local { font-size: 11.5px; color: var(--turquesa-d); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.item-card-qtd { display: flex; align-items: baseline; gap: 6px; }
+.item-card-qtd .num { font-size: 26px; font-weight: 800; color: var(--petroleo); }
+.item-card.baixo .item-card-qtd .num { color: var(--danger); }
+.item-card-qtd .unid { font-size: 13px; color: var(--text-secondary); }
+.item-card-min { font-size: 12px; color: var(--text-secondary); }
+.item-card-conf { font-size: 11.5px; color: var(--text-secondary); font-style: italic; }
+.badge-baixo, .badge-vencendo {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700;
+  border-radius: 999px; padding: 3px 9px; width: fit-content;
+}
+.badge-baixo { color: var(--danger); background: #fbecea; }
+.badge-vencendo { color: var(--alerta); background: #fbf1e2; }
+.item-card-actions { display: flex; gap: 8px; margin-top: 4px; }
+.item-card-actions button {
+  flex: 1; border: 1px solid var(--linha); background: #fff; border-radius: 8px;
+  padding: 7px 0; font-size: 12.5px; font-weight: 700; cursor: pointer; color: var(--text-main);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.item-card-actions button:hover { border-color: var(--turquesa); }
+.item-card-actions .btn-mov { background: var(--turquesa); color: #fff; border-color: var(--turquesa); }
+.item-card-actions .btn-mov:hover { background: var(--turquesa-d); }
+.item-card-actions .btn-excluir:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Some coisas só fazem sentido pra Consumível (validade/lote) — some na aba Patrimônio */
+body.categoria-permanente .action-consumivel { display: none !important; }
+
+/* Modais (padrão Órbita) */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(11,31,51,.45);
+  display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; transition: opacity .2s;
+}
+.modal-overlay.hidden { opacity: 0; pointer-events: none; }
+.modal-content { background: #fff; border-radius: 16px; padding: 26px 28px; width: 100%; max-width: 460px; box-shadow: 0 18px 48px rgba(11,31,51,.25); max-height: 90vh; overflow-y: auto; }
+.modal-content h2 { color: var(--text-main); font-size: 18px; margin: 0 0 18px; }
+.modal-mov-content { max-width: 520px; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12.5px; font-weight: 700; color: var(--text-main); margin-bottom: 6px; }
+.form-group input, .form-group input:disabled, .form-group select {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--linha); border-radius: 9px;
+  padding: 9px 12px; font-family: 'Source Sans 3', sans-serif; font-size: 14.5px; color: var(--text-main); background: #fff;
+}
+.form-group input:disabled { background: #f4f7fb; color: var(--text-secondary); }
+.rev-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.hint { font-size: 12.5px; color: var(--text-secondary); margin: -6px 0 14px; }
+
+.mov-tipo-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
+.mov-tipo-btn {
+  flex: 1; border: 1px solid var(--linha); background: #fff; border-radius: 9px; padding: 9px 0;
+  font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; color: var(--text-main);
+}
+.mov-tipo-btn.on[data-tipo="entrada"] { background: #e4f3f0; border-color: #2a9080; color: #1d6e62; }
+.mov-tipo-btn.on[data-tipo="saida"] { background: #fbecea; border-color: var(--danger); color: #8a3229; }
+.mov-tipo-btn.on[data-modo] { background: #e4f3f0; border-color: var(--turquesa); color: var(--turquesa-d); }
+
+.mov-lotes-atuais { display: flex; flex-direction: column; gap: 5px; max-height: 110px; overflow-y: auto; }
+.mov-lote-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--linha); }
+.mov-lote-row:last-child { border-bottom: none; }
+.mov-lote-nome { font-weight: 700; color: var(--text-main); }
+.mov-lote-info { color: var(--text-secondary); white-space: nowrap; }
+.mov-lote-tag { font-size: 11px; color: var(--turquesa-d); font-weight: 700; }
+
+.mov-historico { margin-top: 18px; border-top: 1px solid var(--linha); padding-top: 14px; }
+.mov-lista { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.mov-row { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--linha); }
+.mov-row:last-child { border-bottom: none; }
+.mov-row .mov-sinal { flex: 0 0 auto; font-weight: 800; width: 20px; text-align: center; }
+.mov-row.entrada .mov-sinal { color: #1d6e62; }
+.mov-row.saida .mov-sinal { color: var(--danger); }
+.mov-row .mov-info { flex: 1; color: var(--text-main); }
+.mov-row .mov-meta { font-size: 11.5px; color: var(--text-secondary); }
+.mov-vazio { font-size: 13px; color: var(--text-secondary); font-style: italic; text-align: center; padding: 14px 0; }
+
+.toast {
+  position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+  background: var(--text-main); color: #fff; padding: 12px 20px; border-radius: 11px;
+  font-size: 14px; font-weight: 600; font-family: 'Plus Jakarta Sans', sans-serif;
+  z-index: 60; box-shadow: 0 8px 24px rgba(11,31,51,.28); transition: opacity .25s, transform .25s;
+}
+.toast.hidden { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(16px); }
+.toast.toast-error { background: #8a2f26; }
+
+.hide-execute .action-execute { display: none !important; }
+
+@media (max-width: 600px) {
+  .rev-grid2 { grid-template-columns: 1fr; }
+  .select-localizacao { min-width: 0; width: 100%; }
+}
