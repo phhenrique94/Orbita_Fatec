@@ -51,6 +51,7 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 async function initAgenda() {
+    iniciarRelogio();
     await carregarLocais();
     await carregarEventos();
 }
@@ -82,10 +83,111 @@ async function carregarEventos() {
         eventos = await apiFetch('/agenda');
         renderCalendar();
         renderPendentes();
+        renderOcupacaoMap();
     } catch(e) {
         console.error('Erro eventos', e);
     }
 }
+
+// ─── Mapa de Ocupação ──────────────────────────────────────────────────────
+
+function getStatusLocal(localId) {
+    const agora = new Date();
+    const hoje = agora.toISOString().split('T')[0];
+    const horaAtual = agora.getHours() * 60 + agora.getMinutes();
+
+    const eventosHoje = eventos.filter(e =>
+        e.localId === localId &&
+        e.data === hoje &&
+        e.status !== 'Rejeitado'
+    );
+
+    if (eventosHoje.length === 0) return 'livre';
+
+    // Verifica se algum evento aprovado está acontecendo agora
+    const aprovadoAgora = eventosHoje.find(e => {
+        if (e.status !== 'Aprovado') return false;
+        const [hi, mi] = e.horaInicio.split(':').map(Number);
+        const [hf, mf] = e.horaFim.split(':').map(Number);
+        const inicio = hi * 60 + mi;
+        const fim    = hf * 60 + mf;
+        return horaAtual >= inicio && horaAtual <= fim;
+    });
+    if (aprovadoAgora) return 'ocupado';
+
+    // Verifica se há evento pendente hoje
+    const temPendente = eventosHoje.some(e => e.status === 'Pendente');
+    if (temPendente) return 'parcial';
+
+    // Há eventos aprovados mas fora do horário atual (reservado para outro momento)
+    const temAprovado = eventosHoje.some(e => e.status === 'Aprovado');
+    if (temAprovado) return 'parcial';
+
+    return 'livre';
+}
+
+function getStatusInfo(status) {
+    const map = {
+        livre:   { icon: '🟢', label: 'Livre',   classe: 'livre'   },
+        ocupado: { icon: '🔴', label: 'Ocupado', classe: 'ocupado' },
+        parcial: { icon: '🟡', label: 'Pendente / Reservado', classe: 'parcial' },
+    };
+    return map[status] || map['livre'];
+}
+
+function renderOcupacaoMap() {
+    const grid = document.getElementById('ocupacao-grid');
+    if (!grid) return;
+
+    if (todosLocais.length === 0) {
+        grid.innerHTML = '<div class="ocupacao-loading">Nenhum local cadastrado.</div>';
+        return;
+    }
+
+    grid.innerHTML = '';
+
+    todosLocais.forEach(local => {
+        const status = getStatusLocal(local.id);
+        const info   = getStatusInfo(status);
+
+        const card = document.createElement('div');
+        card.className = `ocup-card ${info.classe}`;
+        card.title = `${local.nome} — Capacidade: ${local.capacidade || '—'}`;
+        card.innerHTML = `
+            <span class="dot dot-${info.classe}"></span>
+            <div class="ocup-card-info">
+                <span class="ocup-card-nome">${local.nome}</span>
+                <span class="ocup-card-status">${info.icon} ${info.label}</span>
+            </div>
+        `;
+
+        // Clicar no card filtra o calendário por esse local
+        card.onclick = () => {
+            const sel = document.getElementById('select-local');
+            sel.value = local.id;
+            currentLocalId = local.id;
+            renderCalendar();
+        };
+
+        grid.appendChild(card);
+    });
+}
+
+function iniciarRelogio() {
+    const clockEl = document.getElementById('ocupacao-clock');
+    function tick() {
+        const agora = new Date();
+        const h = String(agora.getHours()).padStart(2, '0');
+        const m = String(agora.getMinutes()).padStart(2, '0');
+        if (clockEl) clockEl.textContent = `${h}:${m}`;
+    }
+    tick();
+    setInterval(tick, 1000);
+
+    // Atualiza o mapa de ocupação a cada 60 segundos
+    setInterval(renderOcupacaoMap, 60000);
+}
+
 
 function renderPendentes() {
     const pendentesList = document.getElementById('pendentes-list');

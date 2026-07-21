@@ -36,6 +36,26 @@
           </div>
           
           <div class="agenda-main">
+
+            <!-- Mapa de Ocupação -->
+            <div class="ocupacao-map" id="ocupacao-map">
+              <div class="ocupacao-map-header">
+                <div class="ocupacao-map-title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                  Mapa de Ocupação — Agora
+                </div>
+                <div class="ocupacao-map-legend">
+                  <span class="legend-item"><span class="dot dot-livre"></span>Livre</span>
+                  <span class="legend-item"><span class="dot dot-ocupado"></span>Ocupado</span>
+                  <span class="legend-item"><span class="dot dot-parcial"></span>Pendente</span>
+                  <div class="ocupacao-clock" id="ocupacao-clock">--:--</div>
+                </div>
+              </div>
+              <div class="ocupacao-grid" id="ocupacao-grid">
+                <div class="ocupacao-loading">Carregando locais...</div>
+              </div>
+            </div>
+
             <div class="filters-row">
               <div class="filter-group">
                 <label>Filtrar Local:</label>
@@ -147,6 +167,7 @@
           <select id="loc-tipo">
             <option value="laboratorio">Laboratório</option>
             <option value="auditorio">Auditório</option>
+            <option value="jbl">JBL</option>
             <option value="sala">Sala de Aula</option>
           </select>
         </div>

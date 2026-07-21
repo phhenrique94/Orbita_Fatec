@@ -16,7 +16,8 @@ router.get('/', async (req, res) => {
             const defaults = [
                 { nome: 'Lab 12 - Informática', tipo: 'laboratorio', capacidade: 60 },
                 { nome: 'Lab 20 - Informática', tipo: 'laboratorio', capacidade: 30 },
-                { nome: 'Auditório', tipo: 'auditorio', capacidade: 100 }
+                { nome: 'Auditório', tipo: 'auditorio', capacidade: 100 },
+                { nome: 'JBL', tipo: 'jbl', capacidade: 50 }
             ];
             
             for (const d of defaults) {

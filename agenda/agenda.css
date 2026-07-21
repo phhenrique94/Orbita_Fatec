@@ -278,3 +278,166 @@
 .btn-secondary:hover {
   background: #e2e8f0;
 }
+
+/* ============================================
+   MAPA DE OCUPAÇÃO
+   ============================================ */
+
+.ocupacao-map {
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.07);
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid #e8edf3;
+}
+
+.ocupacao-map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.ocupacao-map-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #1e293b;
+}
+
+.ocupacao-map-title svg {
+  color: var(--primary-blue, #0ea5e9);
+}
+
+.ocupacao-map-legend {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.dot-livre   { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.2); }
+.dot-ocupado { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.2); }
+.dot-parcial { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.2); }
+
+.ocupacao-clock {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #94a3b8;
+  background: #f1f5f9;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+
+.ocupacao-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.ocupacao-loading {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  padding: 0.5rem 0;
+}
+
+/* Card de cada local */
+.ocup-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 160px;
+  position: relative;
+  overflow: hidden;
+}
+
+.ocup-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.09);
+}
+
+.ocup-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: 10px 0 0 10px;
+}
+
+.ocup-card.livre   { border-color: #bbf7d0; background: #f0fdf4; }
+.ocup-card.livre::before   { background: #22c55e; }
+
+.ocup-card.ocupado { border-color: #fecaca; background: #fff5f5; }
+.ocup-card.ocupado::before { background: #ef4444; }
+
+.ocup-card.parcial { border-color: #fed7aa; background: #fffbeb; }
+.ocup-card.parcial::before { background: #f59e0b; }
+
+.ocup-card-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.ocup-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.ocup-card-nome {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocup-card-status {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.ocup-card.livre   .ocup-card-status { color: #16a34a; }
+.ocup-card.ocupado .ocup-card-status { color: #dc2626; }
+.ocup-card.parcial .ocup-card-status { color: #d97706; }
+
+/* Pulse animation para ocupado */
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+  50%       { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+
+.ocup-card.ocupado .dot {
+  animation: pulse-red 1.8s infinite;
+}
+
