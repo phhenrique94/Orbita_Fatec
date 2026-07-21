@@ -12,6 +12,7 @@ import {
 import { firebaseConfig } from "../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../core/layout.js";
 import { escapeHTML as esc } from "../core/security.js";
+import { getEffectiveLevel } from "../core/permissions.js";
 
 const fbApp  = initializeApp(firebaseConfig);
 const analytics = getAnalytics(fbApp);
@@ -331,23 +332,22 @@ onAuthStateChanged(auth, async (user) => {
   
   currentUser = user;
 
-  // Buscar Papel (Role) via API
+  // Buscar Papel (Role) e overrides individuais via API
   let role = 'visitante';
+  let meuOverrides = null;
   try {
     const userData = await apiFetch('/usuarios/me');
     role = userData.role || 'visitante';
+    meuOverrides = userData.permissoes || null;
   } catch (err) {
     role = cached ? cached.role : 'visitante';
   }
 
-  // Buscar Permissões Globais via API
+  // Nível EFETIVO: override individual do usuário vence o do cargo
   let userLevel = 1;
   try {
     const allPerms = await apiFetch('/usuarios/config/permissions');
-    const rawPerm = allPerms[role]?.emprestimo;
-    userLevel = (rawPerm !== undefined && typeof rawPerm === 'object')
-      ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-      : (parseInt(rawPerm) || 1);
+    userLevel = getEffectiveLevel(allPerms[role] || {}, meuOverrides, 'emprestimo');
   } catch (err) {
     // Falha silenciosa para segurança
   }

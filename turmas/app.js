@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebas
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 import { firebaseConfig } from "../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from '../core/layout.js';
+import { getEffectiveLevel } from '../core/permissions.js';
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -53,27 +54,25 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const token = await user.getIdToken();
     let role = 'visitante';
+    let meuOverrides = null;
     try {
       const userData = await apiFetch('/usuarios/me');
       role = userData.role || 'visitante';
+      meuOverrides = userData.permissoes || null;
     } catch (err) {
       role = cached ? cached.role : 'visitante';
     }
 
     setCachedAuth(user, role, token);
 
-    // Carregar nível de acesso dinâmico do módulo
+    // Nível EFETIVO: override individual do usuário vence o do cargo
     let level = 1;
     if (role === 'adm_l1') {
       level = 3;
     } else {
       try {
         const perms = await apiFetch('/usuarios/config/permissions');
-        const rolePerms = perms[role] || {};
-        const rawPerm = rolePerms['turmas'];
-        level = (rawPerm !== undefined && typeof rawPerm === 'object')
-          ? (rawPerm.execute ? 3 : (rawPerm.view ? 2 : 1))
-          : (parseInt(rawPerm) || 1);
+        level = getEffectiveLevel(perms[role] || {}, meuOverrides, 'turmas');
       } catch (e) {
         // Fallback para defaults do middleware
         if (role === 'adm_l2') level = 3;

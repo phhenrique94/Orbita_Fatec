@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Almoxarifado Feridas - Órbita FATEC</title>
+    <link rel="icon" type="image/png" href="/img/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/core/layout.css">
+    <link rel="stylesheet" href="/saude/almoxarifado-feridas/almoxarifado.css">
+</head>
+<body>
+    <div id="auth-guard" class="layout-auth-guard">
+        <div class="layout-spinner"></div>
+        <h3 style="color:var(--text-main); font-weight:600;">Autenticando...</h3>
+    </div>
+
+    <div id="app" class="layout-wrapper hidden">
+        <main class="layout-main">
+            <div class="layout-content alx-content">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Almoxarifado Feridas</h1>
+                        <p class="page-subtitle">Materiais de curativo do ambulatório — estoque, entradas e saídas</p>
+                    </div>
+                    <div class="page-header-actions">
+                        <a class="btn-import" href="relatorio-estoque.html" target="_blank" style="text-decoration:none;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                            Relatório de estoque
+                        </a>
+                        <a class="btn-import" href="relatorio-movimentacoes.html" target="_blank" style="text-decoration:none;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+                            Relatório de movimentações
+                        </a>
+                        <button class="btn-primary action-execute" id="btn-novo-item">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Novo Material
+                        </button>
+                    </div>
+                </div>
+
+                <div class="alx-resumo" id="alx-resumo"></div>
+
+                <div class="filters-bar">
+                    <div class="search-wrap">
+                        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" id="search-itens" class="search-input" placeholder="Buscar material...">
+                    </div>
+                    <label class="chk-baixo">
+                        <input type="checkbox" id="filtro-baixo-estoque">
+                        Só estoque baixo
+                    </label>
+                </div>
+
+                <div id="itens-list" class="alx-grid">
+                    <div class="empty-state"><p>Carregando materiais...</p></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Novo/Editar Material -->
+    <div id="modal-item" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 id="modal-item-title">Novo Material</h2>
+            <form id="form-item">
+                <input type="hidden" id="item-id">
+                <div class="form-group">
+                    <label>Nome do material *</label>
+                    <input type="text" id="item-nome" placeholder="Ex: Hidrogel, Espuma, Gaze estéril" required>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Unidade de medida *</label>
+                        <input type="text" id="item-unidade" placeholder="Ex: unidade, pacote, frasco" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Estoque mínimo</label>
+                        <input type="number" id="item-estoque-minimo" min="0" placeholder="0">
+                    </div>
+                </div>
+                <div class="form-group" id="grupo-qtd-inicial">
+                    <label>Quantidade inicial em estoque</label>
+                    <input type="number" id="item-qtd-inicial" min="0" placeholder="0">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-cancelar-item">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-salvar-item">Cadastrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Movimentação (entrada/saída) + histórico -->
+    <div id="modal-mov" class="modal-overlay hidden">
+        <div class="modal-content modal-mov-content">
+            <h2 id="modal-mov-title">Movimentar estoque</h2>
+
+            <form id="form-mov">
+                <input type="hidden" id="mov-item-id">
+                <div class="mov-tipo-toggle">
+                    <button type="button" class="mov-tipo-btn on" data-tipo="entrada" id="btn-tipo-entrada">↓ Entrada</button>
+                    <button type="button" class="mov-tipo-btn" data-tipo="saida" id="btn-tipo-saida">↑ Saída</button>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Quantidade *</label>
+                        <input type="number" id="mov-quantidade" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Disponível agora</label>
+                        <input type="text" id="mov-disponivel" disabled>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Motivo *</label>
+                    <input type="text" id="mov-motivo" placeholder="Ex: Compra, doação, uso em atendimento" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-fechar-mov">Fechar</button>
+                    <button type="submit" class="btn-primary" id="btn-registrar-mov">Registrar</button>
+                </div>
+            </form>
+
+            <div class="mov-historico">
+                <span class="eyebrow">Histórico</span>
+                <div id="mov-lista" class="mov-lista"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script type="module" src="/saude/almoxarifado-feridas/app.js"></script>
+</body>
+</html>

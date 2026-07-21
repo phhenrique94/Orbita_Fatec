@@ -6,7 +6,7 @@
   <title>Usuários · Órbita - FatecIVP</title>
   <link rel="icon" type="image/png" href="/img/favicon.png">
   <link rel="stylesheet" href="/core/layout.css">
-  <link rel="stylesheet" href="/usuarios/usuarios.css">
+  <link rel="stylesheet" href="/usuarios/usuarios.css?v=5">
 </head>
 <body>
   <div class="particles"></div>
@@ -31,7 +31,7 @@
     <div class="tabs-nav" id="mod-tabs-nav">
       <button class="tab-btn active" data-tab="usuarios">Usuários</button>
       <button class="tab-btn" data-tab="cargos">Gerenciar Acessos</button>
-      <button class="tab-btn" data-tab="lista-cargos">Cargos</button>
+      <button class="tab-btn" data-tab="lista-cargos">Setores</button>
     </div>
 
     <!-- TAB: Lista de Usuários -->
@@ -71,29 +71,69 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-orange)" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <h2 class="page-title">Gerenciar Acessos</h2>
         </div>
-        <p class="sidebar-desc" style="font-size: 1rem; margin-bottom: 2rem;">Defina o que cada nível de acesso pode visualizar ou executar globalmente em cada módulo.</p>
-        
-        <div class="search-bar" style="margin-bottom: 2rem;">
-          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <select id="role-select" class="form-input" style="padding-left: 3rem; appearance: none; cursor: pointer; height: 50px;">
-            <option value="adm_l2">ADM N2 - Setor/Chefia</option>
-            <option value="ti">TI - Suporte</option>
-            <option value="visitante">Visitante - Consulta</option>
-            <option value="rh">RH - Recursos Humanos</option>
-          </select>
+        <p class="sidebar-desc" style="font-size: 1rem; margin-bottom: 1.5rem;">Defina o acesso por setor, ou personalize módulo a módulo para um usuário específico — a permissão individual sempre vence a do cargo.</p>
+
+        <!-- Modo: Por Cargo | Por Usuário -->
+        <div class="perm-mode-tabs">
+          <button class="perm-mode-btn active" data-perm-mode="cargo">Por Setor</button>
+          <button class="perm-mode-btn" data-perm-mode="usuario">Por Usuário</button>
         </div>
 
-        <div id="global-permissions-grid-wrapper" style="background: var(--bg); padding: 2rem; border-radius: 20px; border: 1px solid var(--border-color); margin-bottom: 2rem;">
-          <div id="global-permissions-grid" class="module-permissions-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem;">
-            <!-- Gerado dinamicamente via JS -->
+        <!-- Filtro por tópico/categoria (populado via JS a partir de CATEGORIES) -->
+        <div class="perm-cat-filter" id="perm-cat-filter"></div>
+
+        <!-- ===== MODO: POR CARGO ===== -->
+        <div id="perms-modo-cargo">
+          <div class="search-bar" style="margin-bottom: 2rem;">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <select id="role-select" class="form-input" style="padding-left: 3rem; appearance: none; cursor: pointer; height: 50px;">
+              <option value="adm_l2">ADM N2 - Setor/Chefia</option>
+              <option value="ti">TI - Suporte</option>
+              <option value="visitante">Visitante - Consulta</option>
+              <option value="rh">RH - Recursos Humanos</option>
+            </select>
+          </div>
+
+          <div id="global-permissions-grid-wrapper" style="background: var(--bg); padding: 2rem; border-radius: 20px; border: 1px solid var(--border-color); margin-bottom: 2rem;">
+            <div id="global-permissions-grid">
+              <!-- Gerado dinamicamente via JS -->
+            </div>
+          </div>
+
+          <div class="perm-actions-row">
+            <button class="btn btn-primary action-execute" id="btn-save-global-perms">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Salvar Configurações do Setor
+            </button>
           </div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end;">
-          <button class="btn btn-primary action-execute" id="btn-save-global-perms" style="padding: 1rem 2rem;">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            Salvar Configurações do Cargo
-          </button>
+        <!-- ===== MODO: POR USUÁRIO ===== -->
+        <div id="perms-modo-usuario" class="hidden">
+          <div class="search-bar" style="margin-bottom: 1rem;">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            <select id="perm-user-select" class="form-input" style="padding-left: 3rem; appearance: none; cursor: pointer; height: 50px;">
+              <option value="">Selecione um usuário...</option>
+            </select>
+          </div>
+
+          <div id="perm-user-info" class="perm-user-info hidden"></div>
+
+          <div id="user-permissions-wrapper" class="hidden" style="background: var(--bg); padding: 2rem; border-radius: 20px; border: 1px solid var(--border-color); margin-bottom: 2rem;">
+            <div id="user-permissions-grid">
+              <!-- Gerado dinamicamente via JS -->
+            </div>
+          </div>
+
+          <div id="user-perms-actions" class="hidden perm-actions-row">
+            <button class="btn btn-secondary action-execute" id="btn-reset-user-perms">
+              Restaurar Padrão do Setor
+            </button>
+            <button class="btn btn-primary action-execute" id="btn-save-user-perms">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Salvar Permissões do Usuário
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -106,17 +146,17 @@
             <div class="icon-glow">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-orange)" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             </div>
-            <h2 class="page-title">Cargos do Sistema</h2>
+            <h2 class="page-title">Setores do Sistema</h2>
           </div>
           <button class="btn btn-primary action-execute" id="btn-novo-cargo">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Novo Cargo
+            Novo Setor
           </button>
         </div>
         
         <div class="search-bar" style="margin-bottom: 2rem;">
           <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="search-roles" placeholder="Buscar cargo...">
+          <input type="text" id="search-roles" placeholder="Buscar setor...">
         </div>
 
         <div id="roles-list" class="roles-list-grid">
@@ -170,12 +210,12 @@
             </div>
           </div>
 
-          <!-- Coluna Direita: Nível de Acesso -->
+          <!-- Coluna Direita: Setor -->
           <div class="edit-modal-col">
             <div class="edit-section">
               <div class="edit-section-label">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Nível de Acesso
+                Setor
               </div>
               <div class="role-selector" id="novo-role-options">
                 <!-- Gerado dinamicamente via JS -->
@@ -214,12 +254,12 @@
       <input type="hidden" id="edit-email">
 
       <div class="edit-modal-grid">
-        <!-- Coluna Esquerda: Nível de Acesso -->
+        <!-- Coluna Esquerda: Setor -->
         <div class="edit-modal-col">
           <div class="edit-section">
             <div class="edit-section-label">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              Nível de Acesso
+              Setor
             </div>
             
             <div class="role-selector" id="edit-role-options">
@@ -288,7 +328,7 @@
   <div id="modal-cargo" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-header">
-        <h3 class="modal-title">Novo Cargo</h3>
+        <h3 class="modal-title">Novo Setor</h3>
         <button class="close-btn" id="btn-fechar-cargo">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
@@ -296,11 +336,11 @@
 
       <form id="form-novo-cargo">
         <div class="form-group">
-          <label class="form-label">Nome do Cargo</label>
+          <label class="form-label">Nome do Setor</label>
           <input type="text" id="cargo-nome" class="form-input" placeholder="Ex: Auxiliar de TI" required>
         </div>
         <div class="form-group">
-          <label class="form-label">ID do Cargo (Identificador único)</label>
+          <label class="form-label">ID do Setor (Identificador único)</label>
           <input type="text" id="cargo-id" class="form-input" placeholder="Ex: auxiliar_ti" required>
           <small style="color: var(--text-secondary); font-size: 0.75rem; margin-top: 0.25rem;">Use apenas letras minúsculas e sublinhados.</small>
         </div>
@@ -310,7 +350,7 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" id="btn-cancelar-cargo">Cancelar</button>
           <button type="submit" class="btn btn-primary action-execute" id="btn-salvar-cargo">
-            <span id="cargo-salvar-text">Criar Cargo</span>
+            <span id="cargo-salvar-text">Criar Setor</span>
           </button>
         </div>
       </form>
@@ -319,6 +359,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script type="module" src="/usuarios/app.js"></script>
+  <script type="module" src="/usuarios/app.js?v=6"></script>
 </body>
 </html>

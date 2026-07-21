@@ -232,7 +232,10 @@
   letter-spacing: 0.05em;
 }
 
-.form-group input[type="text"] {
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="date"],
+.form-group select {
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1px solid var(--border-color);
@@ -242,6 +245,8 @@
   color: var(--text-main);
   background: #f8fafc;
   transition: all 0.2s ease;
+  font-family: inherit;
+  height: 48px;
 }
 
 .form-group input:focus {

@@ -31,6 +31,15 @@ O sistema utiliza Role-Based Access Control (RBAC). Os cargos base definidos em 
 
 *Nota: No módulo de Usuários, o ADM N1 pode ajustar granularmente as permissões de "Ver" e "Executar" para cada cargo nos diferentes módulos.*
 
+### Nomenclatura: "Setor" na interface = cargo/role no código
+Na interface do módulo Usuários, os cargos são apresentados como **"Setor"** (cadastro de usuário, aba Setores, modo "Por Setor" da gerência de acessos). Internamente nada mudou: o campo continua sendo `role` no doc `users/{uid}`, as permissões continuam em `config/permissions` por role, e os ids (`adm_l1`, `adm_l2`, `ti`, `rh`, `visitante`, ...) permanecem. Não confundir com os **setores de funcionários** (`setores_rh`, módulo Funcionários), que são apenas organizacionais e não concedem acesso.
+
+### Permissões por usuário (override individual)
+Além das permissões por cargo, o ADM N1 pode conceder **acessos personalizados por usuário** (tela Usuários → Gerenciar Acessos → "Por Usuário"). O override é salvo no campo `permissoes` do doc `users/{uid}` (`{ modulo: nivel }`) e **sempre vence o cargo** — tanto para ampliar quanto para restringir. Módulos sem override herdam o nível do cargo. Níveis: 1 = Sem Acesso, 2 = Apenas Leitura, 3 = Acesso Total. Convenção visual: acesso herdado do cargo aparece em **azul**; acesso personalizado, em **laranja**. A gerência de acessos (globais e individuais) é exclusiva do `adm_l1` (imposto no backend).
+
+### ⚠️ REGRA OBRIGATÓRIA — Registro de módulos e tópicos novos
+`core/permissions.js` é a **fonte única** de módulos (`MODULES`) e tópicos/categorias (`CATEGORIES`). **Todo módulo novo criado DEVE ser registrado em `MODULES`** (com `id`, `category`, `title`, `icon`, `url`) e, se o tópico não existir, **registrado em `CATEGORIES`**. É esse registro que faz o módulo aparecer automaticamente no menu lateral E na tela de Gerência de Acessos (grade por cargo, por usuário e filtro por tópico) — não há mais listas paralelas hardcoded. Um módulo não registrado ali fica invisível para o sistema de permissões.
+
 ## 5. Módulos do sistema
 
 ### Meu Espaço (Antigo Dashboard)
@@ -105,6 +114,327 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 - Como reverter:
 
 ## 8. Histórico de alterações
+
+### [2026-07-17] Novo módulo: Almoxarifado Feridas (Gestão Saúde)
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/src/rotas/almoxarifado-feridas.js` (CRUD de materiais em `almoxarifado_feridas_itens` + subcoleção `movimentacoes`; entrada/saída de estoque em transação Firestore para evitar corrida entre usuárias simultâneas, bloqueando saída maior que o disponível; autoria obrigatória em cada movimentação)
+  - `/saude/almoxarifado-feridas/index.html`, `app.js`, `almoxarifado.css` (Grid de materiais com destaque visual de estoque baixo, busca e filtro "só estoque baixo"; modal de cadastro/edição; modal de movimentação com toggle entrada/saída e histórico)
+- Arquivos alterados:
+  - `/core/permissions.js` (Módulo `almoxarifado-feridas` na categoria Gestão Saúde, atribuído a ADM N1/N2)
+  - `/src/middlewares/auth.js` (Permissões padrão: ADM N2 = 3; TI, RH e Visitante = 1)
+  - `/api/index.js` (Registro das rotas)
+  - Nota: `/usuarios/app.js` já deriva a lista de módulos gerenciáveis direto de `core/permissions.js` — nenhuma alteração necessária ali.
+- Tipo: Novo Módulo
+- Motivo: Controlar o estoque de materiais de curativo do ambulatório (hidrogel, espuma, gaze etc.), com histórico de entradas/saídas e alerta de estoque baixo, seguindo o mesmo padrão RBAC/autoria do módulo Ferida.
+- Impacto: Novas coleções Firestore `almoxarifado_feridas_itens` e subcoleção `movimentacoes`. Nenhuma integração automática com o módulo Ferida (a baixa de estoque é manual, por decisão explícita ao escopo).
+- Como testar: Gestão Saúde → Almoxarifado Feridas → cadastrar material com estoque mínimo, registrar entrada e saída, verificar o card ficar vermelho quando a quantidade cai abaixo do mínimo, e que uma saída maior que o disponível é bloqueada com aviso.
+- Como reverter: Remover a pasta `/saude/almoxarifado-feridas`, a rota `/src/rotas/almoxarifado-feridas.js`, o registro em `/api/index.js` e as referências em `/core/permissions.js` e `/src/middlewares/auth.js`.
+
+### [2026-07-17] Ferida: impressão do relatório encostava na borda física do papel
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/ferida.css` (`.print-page` ganhou padding próprio (8mm/10mm) dentro do `@media print`, em vez de depender só da margem do `@page` — o diálogo de impressão do navegador pode ignorar/zerar essa margem conforme a configuração de quem imprime, e sem uma margem garantida no próprio conteúdo, a informação das colunas da direita (data de emissão, autor, campos do grid de 2 colunas) encostava e cortava na borda do papel, como mostrado no print enviado pelo usuário. Também reduzido o `@page margin` de 12mm pra 10mm pra não dobrar demais a margem total, e adicionado `box-sizing: border-box` no `.print-page` — tanto na versão de tela quanto na de impressão — pra padding não somar por cima do `max-width`)
+- Tipo: Correção de Bug
+- Motivo: Usuário mandou print mostrando texto cortado na borda direita do relatório impresso.
+- Impacto: Nenhuma mudança de schema/endpoint. Efeito só visual na impressão/PDF dos relatórios.
+- Como testar: Imprimir/salvar PDF do relatório individual e do geral e conferir que nenhuma informação (datas, nomes, colunas da direita) encosta ou corta na borda do papel.
+- Como reverter: Devolver `.print-page` no `@media print` pra `padding: 0` e o `@page margin` pra 12mm.
+
+### [2026-07-17] Ferida: corrige o painel de opções "escondido" nas telas de relatório
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/ferida.css` (Achada a causa real do painel "O que incluir" não aparecer: o shell do app é flexbox com altura travada — `.layout-main` tem `overflow:hidden` e `.layout-content` é `flex:1; overflow-y:auto`. Como o card do relatório (`.print-page`) é alto e fica *fora* de `.layout-content`, como irmão dela dentro de `.layout-main`, o flexbox espremia `.layout-content` — com o cabeçalho, botões e o painel de opções dentro — numa caixinha de rolagem minúscula, exigindo rolar *dentro* dela pra ver o painel. Agora, só nas telas de relatório (`body.pagina-relatorio`), `.layout-main` rola a página inteira e `.layout-content` para de competir por espaço com o card do relatório)
+- Tipo: Correção de Bug
+- Motivo: Usuário reportou que o painel de checkboxes não aparecia; com um print da tela e testando em aba anônima (descartando cache/extensão), ele mesmo percebeu que a área existia mas estava dentro de uma divisão com barra de rolagem própria, cortada da vista.
+- Impacto: Nenhuma mudança de schema/endpoint. Só afeta a rolagem visual das telas de relatório — `body.pagina-relatorio` não se aplica a `index.html`/`pacientes.html`.
+- Como testar: Abrir o Relatório Geral e conferir que o painel "Escolha o que vai sair no relatório" aparece normalmente entre o cabeçalho e o card do relatório, sem precisar rolar dentro de uma caixinha separada; a página deve rolar inteira, de um jeito só.
+- Como reverter: Remover o bloco `body.pagina-relatorio .layout-main`/`.layout-content` (fora do `@media print`) em `ferida.css`.
+
+### [2026-07-17] Ferida: corrige possível falha silenciosa no relatório geral (token de sessão)
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/app.js`:
+    - `apiFetch` agora espera a confirmação real do Firebase (`onAuthStateChanged`) antes da primeira chamada à API — o caminho rápido de auth (`getCachedAuth`) usa um token salvo em `localStorage` que não se autorrenova (diferente do objeto real do Firebase), então uma sessão parada há mais de 1h podia fazer a primeira chamada da tela falhar com 401 sem aviso nenhum, se o teste começou logo depois de o relatório carregar dados a partir do cache.
+    - `initPaginaRelatorioGeral`: se o painel de opções não existir na página (`#relatorio-opcoes`), agora lança um erro explícito em vez de travar silenciosamente; erros nessa função voltaram a aparecer visíveis em `#relatorio-msg` (antes podiam ficar escondidos atrás da classe `hidden` já aplicada).
+- Tipo: Correção de Bug
+- Motivo: Usuário reportou que o painel "O que incluir" não aparecia no Relatório Geral, sem erro nenhum visível, mesmo após recarregar a página — sintoma clássico de uma chamada à API falhando em silêncio por token vencido.
+- Impacto: Nenhuma mudança de schema/endpoint. Todas as chamadas de API do módulo Ferida (ficha, pacientes, relatórios) ganham essa proteção, não só o relatório geral.
+- Como testar: Deixar a sessão aberta por mais de 1h sem uso e depois abrir o Relatório Geral direto — deve carregar normalmente (ou, se falhar por outro motivo, mostrar um erro visível em vez de nada). Em uso normal, testar o painel "O que incluir" como antes.
+- Como reverter: Remover `authConfirmado`/`authConfirmadoPromise` e o `await` correspondente no início de `apiFetch`.
+
+### [2026-07-17] Ferida: relatório geral com seções opcionais
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/relatorio-geral.html` (Novo painel "O que incluir", com uma checkbox por seção — Resumo, Distribuição por tipo de ferida, Distribuição por município, Lista de pacientes — todas marcadas por padrão)
+  - `/saude/ferida/app.js` (Cada seção do relatório geral agora nasce marcada com `data-secao`; desmarcar uma checkbox aplica a classe `.rel-oculto`, escondendo a seção tanto na prévia quanto na impressão)
+  - `/saude/ferida/ferida.css` (Estilo da lista de checkboxes e a classe `.rel-oculto`)
+- Tipo: Evolução de Funcionalidade
+- Motivo: Pedido do usuário — o relatório geral saía sempre completo; a pessoa que emite precisa poder escolher o que vai no documento final, não tudo de uma vez.
+- Impacto: Nenhuma mudança de schema/endpoint. Por padrão, com tudo marcado, o relatório sai igual a antes.
+- Como testar: Abrir o relatório geral, desmarcar por exemplo "Lista de pacientes" e conferir que ela some da prévia e da impressão, mantendo as demais seções.
+- Como reverter: Remover o painel `#relatorio-opcoes` do HTML, os atributos `data-secao` e o listener de checkboxes no `app.js`, e a classe `.rel-oculto` no CSS.
+
+### [2026-07-17] Ferida: relatório geral, correção da impressão e exclusão simplificada
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/saude/ferida/relatorio-geral.html` (Nova tela: relatório imprimível com todos os pacientes — total cadastrado, distribuição por tipo de ferida e por município (contagem + %), e a lista completa (nome, tipo de ferida, município, cadastro). Mesma identidade visual/logo do relatório por paciente. Acessível pelo botão "Relatório geral" na tela "Pacientes")
+- Arquivos alterados:
+  - `/saude/ferida/ferida.css`:
+    - **Correção de impressão:** o shell do app (`body`, `.layout-wrapper`, `.layout-main`, `.layout-content`, em `core/layout.css`) trava a altura em `100vh` e esconde o excedente pra rolar na tela — isso cortava o relatório fora da primeira página ao imprimir. O `@media print` agora reseta `height`/`overflow`/`margin`/`padding` dessa cadeia inteira (escopado por `body.pagina-relatorio`, sem afetar impressão de outras telas do módulo).
+    - Estilos novos do relatório geral (`.rel-resumo`, `.rel-resumo-card`, `.rel-tabela`).
+  - `/saude/ferida/app.js`: `excluirPaciente()` não pede mais pra digitar o nome do paciente — só um `confirm()` único com o resumo do que será apagado. Novas funções `initPaginaRelatorioGeral`/`renderRelatorioGeral` (reaproveitam `initApp`, detectando `#relatorio-geral-conteudo`).
+  - `/saude/ferida/pacientes.html`: novo botão "Relatório geral" no cabeçalho, ao lado de "Voltar para a ficha".
+- Tipo: Nova Funcionalidade / Correção de Bug / Simplificação de UX
+- Motivo: Pedido do usuário — faltava uma visão agregada de todos os pacientes pra tirar num relatório só; a impressão do relatório por paciente estava cortando informação nas bordas; e a confirmação dupla (digitar o nome) na exclusão de paciente foi considerada excessiva — um aviso único já basta.
+- Impacto: Nenhuma mudança de schema ou endpoint novo — o relatório geral só lê `GET /pacientes` (a mesma rota que a tela "Pacientes" já usa, sem `busca`). Excluir paciente continua irreversível, só que agora com um clique de confirmação em vez de dois.
+- Como testar: Na tela "Pacientes", clicar em "Relatório geral" e conferir os totais/distribuições e a lista; imprimir (Ctrl+P) tanto o relatório geral quanto o de um paciente com vários atendimentos e confirmar que nada fica cortado nas bordas, mesmo em relatórios longos com mais de uma página; excluir um paciente de teste e confirmar que só aparece um aviso (sem pedir pra digitar o nome).
+- Como reverter: Remover `/saude/ferida/relatorio-geral.html` e o botão em `pacientes.html`; devolver o `prompt()` de confirmação em `excluirPaciente()`; reverter o bloco de reset de altura/overflow do `@media print` em `ferida.css` (mantendo só o que já existia antes).
+
+### [2026-07-17] Ferida: tipo de ferida vai pro cadastro do paciente + tela de relatório imprimível
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/saude/ferida/relatorio.html` (Nova tela: relatório de avaliação e evolução do paciente, pronto pra imprimir/salvar como PDF pelo navegador — `?paciente=ID`. Cabeçalho com a logo da Fatec (reaproveita `/img/fateclogoazul.png`, já usada no módulo Fidelidade — não foi preciso subir arquivo novo), identificação do paciente (nome, idade, município, tipo de ferida) e a evolução completa: um bloco por atendimento com todos os campos clínicos e a conduta, nas cores do módulo (petróleo/turquesa). Usa o mesmo padrão `.print-page` + `@media print` já usado em `avaliacoes.css`, escopado por `body.pagina-relatorio` pra não afetar a impressão das outras telas do módulo, que compartilham o mesmo `ferida.css`)
+- Arquivos alterados:
+  - `/saude/ferida/index.html`:
+    - "Tipo de ferida" deixou de ser campo do atendimento e virou select no cadastro/edição do paciente (Neuropatia Diabética, Úlcera Venosa, Úlcera Arterial, Úlcera Mista, com opção "Não especificado"); passou a aparecer na barra do paciente, junto do município.
+    - Novo botão "Relatório" na barra do paciente, ao lado de Editar/Excluir — disponível pra leitura e escrita (não é `action-execute`, já que gerar relatório não é uma ação de escrita) — abre `relatorio.html?paciente=ID` em nova aba.
+  - `/saude/ferida/pacientes.html`: nova coluna "Tipo de ferida" na tabela; a linha deixou de ser clicável por inteiro — agora tem uma coluna "Ações" com dois ícones por paciente (abrir ficha / gerar relatório).
+  - `/saude/ferida/app.js`: `tipoFerida` saiu do payload do atendimento e do modal de detalhe do histórico, entrou no modal de paciente e em `selecionarPaciente`/`renderTabelaPacientes`; novas funções `initPaginaRelatorio` e `renderRelatorio` (reaproveitam `initApp` como as outras telas, detectando `#relatorio-conteudo`).
+  - `/saude/ferida/ferida.css`: estilos do relatório (`.rel-*`), regras de impressão (`@media print`, escopadas por `body.pagina-relatorio`) e da nova coluna de ações em `pacientes.html`.
+  - `/src/rotas/ferida.js`: `tipoFerida` saiu da validação/gravação de `POST /pacientes/:id/atendimentos` e entrou em `POST /pacientes` e `PUT /pacientes/:id` (contra a mesma lista fechada de 4 tipos).
+- Tipo: Nova Funcionalidade / Correção de Modelagem
+- Motivo: Pedido do usuário — tipo de ferida é uma característica do paciente/diagnóstico, não algo que se redefine a cada atendimento, então devia estar no cadastro; e faltava uma forma de gerar um relatório imprimível e com a identidade visual da Fatec pra levar pra fora do sistema (referência, prontuário físico, etc.).
+- Impacto: Atendimentos não têm mais `tipoFerida` (quem já tinha ficou órfão do campo — não é lido em lugar nenhum, sem efeito). Pacientes ganham `tipoFerida` (string de uma lista fechada, ou null). Nenhum endpoint novo — o relatório só lê `GET /pacientes/:id` e `GET /pacientes/:id/atendimentos`, que já existiam.
+- Como testar: Cadastrar/editar um paciente escolhendo o tipo de ferida e ver aparecer na barra e na tabela de "Pacientes"; clicar em "Relatório" (na ficha ou na lista) e conferir a logo, os dados do paciente e a evolução completa; usar Ctrl+P / "Imprimir / Salvar PDF" e confirmar que só o relatório aparece (sem menu/sidebar) e que as outras telas do módulo continuam imprimindo normalmente.
+- Como reverter: Remover `/saude/ferida/relatorio.html`, o botão/coluna de ações relacionados, `tipoFerida` de `POST/PUT /pacientes` e devolver o campo ao formulário de atendimento (se necessário).
+
+### [2026-07-17] Ferida: remove nascimento e data redundante, adiciona tipo de ferida, cobertura e município por lista
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/index.html`:
+    - Removido "Data" da barra do paciente (`#meta-data`) — já é capturada automaticamente em cada atendimento (`createdAt`), era redundante.
+    - Removido o campo "Data de nascimento" do cadastro/edição de paciente (`#pac-nascimento`) e da revisão do OCR (`#rev-nascimento`).
+    - Novo campo "Tipo de ferida" (Neuropatia Diabética, Úlcera Venosa, Úlcera Arterial, Úlcera Mista), single-select, no topo dos campos clínicos.
+    - Novo campo "Cobertura(s) utilizada(s)" (ALEVYN, AQUACEL AG+, AQUASEPT, BACTIGRASS, BOTA DE UNNA, CREME BARREIRA, GAZE KERLIX, HIDROCOLOIDE, PIELSANA, SOLOSITE — em ordem alfabética pt-BR), multi-select, imediatamente antes do relatório final (conduta).
+    - `#pac-municipio` e `#rev-municipio` deixaram de ser texto livre e viraram `<select>` com os 16 municípios do consórcio CIS de Ivaiporã (lista fixa, a pedido do usuário — sem tela de gerenciamento por ora).
+  - `/saude/ferida/app.js`:
+    - Removidas as leituras/escritas de `pac-nascimento`/`rev-nascimento` (modal de paciente, revisão do OCR, `aplicarFichaIA`).
+    - Nova função `selecionarMunicipio(selectId, valor)`: preenche o select preservando qualquer município fora da lista fixa (cadastro antigo ou lido por OCR) — injeta uma opção extra em vez de perder o dado.
+    - `salvarAtendimento` envia `tipoFerida` e `cobertura`; `abrirDetalheAtendimento` exibe os dois no modal de detalhe do histórico.
+  - `/src/rotas/ferida.js`:
+    - `PUT /pacientes/:id` só grava `dataNascimento` se o campo vier explícito no corpo da requisição — evita apagar o nascimento de pacientes antigos agora que o formulário não o envia mais.
+    - `POST /pacientes/:id/atendimentos` valida e grava `tipoFerida` (contra lista fechada) e `cobertura` (array).
+- Tipo: Evolução de Funcionalidade / Simplificação
+- Motivo: Propostas de melhoria do usuário — a data da barra era redundante com a autoria de cada atendimento; nascimento não é mais coletado no cadastro; tipo de ferida e cobertura eram informações da rotina clínica que faltavam no digital; município por lista evita erro de digitação e ganha consistência (facilita quem cadastra).
+- Impacto: Atendimentos novos ganham `tipoFerida` (string ou null) e `cobertura` (array); registros antigos não têm esses campos (leitura tolera ausência). Pacientes novos não recebem `dataNascimento`; pacientes antigos mantêm o valor que já tinham (não é apagado ao editar). Município deixa de ser texto livre, mas qualquer valor antigo fora da lista continua visível/editável graças à opção extra injetada.
+- Como testar: Abrir a ficha — não deve mais aparecer "Data" na barra do paciente nem "Data de nascimento" no cadastro; selecionar Tipo de ferida e Cobertura(s), salvar um atendimento e conferir os dois no detalhe do histórico; cadastrar paciente novo escolhendo o município por lista; editar um paciente antigo que já tinha nascimento e confirmar que o valor não desaparece do banco após salvar (mesmo sem campo na tela).
+- Como reverter: Restaurar os campos `pac-nascimento`/`rev-nascimento`/`meta-data` removidos, os `<input type="text">` de município, e remover `tipoFerida`/`cobertura` dos três arquivos.
+
+### [2026-07-16] Ferida: orientações de biofilme (sinais clínicos e indicadores) da ficha de papel
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/index.html` (Bloco expansível "💡 Orientações" sob o campo Sim/Não de Biofilme, no mesmo padrão já usado no exsudato: sinais clínicos — substância viscosa/espessa/brilhante, pigmentação amarelada/esverdeada, material gelatinoso que se reforma em 24–48h — e indicadores indiretos — falha no tratamento com antimicrobianos, atraso na cicatrização, ciclos recorrentes, aumento de exsudato, tecido friável, hipergranulação — copiados do verso da ficha oficial)
+- Tipo: Ajuste de UI (apoio ao preenchimento)
+- Motivo: Pedido do usuário — a ficha de papel tem sinais clínicos e indicadores pra ajudar a identificar biofilme, do mesmo jeito que tinha a tabela de indicadores de quantidade de exsudato; são orientação pra enfermeira, não um campo a preencher.
+- Impacto: Nenhuma mudança de schema — é só texto de apoio, fechado por padrão (`<details>`), não altera o que é salvo no atendimento.
+- Como testar: Abrir a ficha, ir até "Biofilme no leito" e clicar em "💡 Orientações para identificar o biofilme" — deve expandir mostrando sinais clínicos e indicadores indiretos.
+- Como reverter: Remover o bloco `<details class="orienta">` do campo biofilme em `index.html`.
+
+### [2026-07-16] Ferida: histórico virou modal separado, aberto só quando há retorno
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/index.html` (Removida a seção "Histórico do paciente" do fim da grade da ficha; o conteúdo (`#timeline`) foi pro novo `#modal-historico`, no mesmo padrão visual do modal de fichas antigas. Novo botão "Histórico de evolução (N)" na barra do paciente, ao lado de "Fichas antigas")
+  - `/saude/ferida/app.js` (`selecionarPaciente` agora mostra o botão do histórico só quando `atendimentos.length > 0` — ou seja, só se já existe algum retorno registrado; nova função `setupHistoricoModal` abre/fecha o modal)
+  - `/saude/ferida/ferida.css` (Removido o estilo da seção antiga `.hist`; `.timeline` ganhou rolagem própria dentro do modal)
+- Tipo: Ajuste de UI / Evolução de Funcionalidade
+- Motivo: Pedido do usuário — a evolução ficava embutida no fim da ficha, misturada com o formulário do atendimento atual. Separar em um botão que só aparece quando há retorno deixa claro que é uma consulta ao passado, não parte do preenchimento do atendimento de hoje.
+- Impacto: Nenhuma mudança de schema ou de endpoint. No primeiro atendimento de um paciente (sem retornos ainda) o botão não aparece, já que não há histórico pra ver.
+- Como testar: Selecionar um paciente sem atendimentos salvos — o botão não deve aparecer; salvar um atendimento e reabrir o paciente — o botão "Histórico de evolução (1)" deve aparecer na barra e, ao clicar, abrir o modal com a linha do tempo (que por sua vez continua abrindo o detalhe de cada atendimento ao clicar).
+- Como reverter: Devolver a seção `<section class="panel hist">` com `#timeline` pro fim da grade da ficha, remover o botão `#btn-historico` e o `#modal-historico`, e reverter `selecionarPaciente`/`setupHistoricoModal`.
+
+### [2026-07-16] Ferida: histórico ganhou detalhe do atendimento anterior
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/index.html` (Novo modal `#modal-atendimento`, reaproveitando o estilo `.modal-content.wide` já usado nas fichas antigas)
+  - `/saude/ferida/app.js` (Cada linha do histórico ficou clicável — `renderTimeline` marca a linha como `.tl-clickable` e escuta o clique; nova função `abrirDetalheAtendimento` monta a visão completa daquele atendimento — dimensões, localização, tecido, bordas, pele adjacente, exsudato, infecção superficial/profunda, biofilme, dor e conduta — e `setupDetalheAtendimento` cuida de abrir/fechar o modal)
+  - `/saude/ferida/ferida.css` (Estilo de hover/"Ver detalhes →" nas linhas do histórico e o layout do conteúdo do modal de detalhe)
+- Tipo: Evolução de Funcionalidade / Correção de UX
+- Motivo: Pedido do usuário — o histórico só mostrava um resumo de uma linha (dimensão, um item de tecido, tendência); não dava pra ver o que de fato foi registrado num atendimento anterior.
+- Impacto: Nenhuma mudança de schema nem de endpoint — os dados já vinham no `GET /pacientes/:id/atendimentos`, só não eram exibidos por completo.
+- Como testar: Selecionar um paciente com pelo menos um atendimento salvo, clicar numa linha do histórico e confirmar que abre o modal com todos os campos daquele atendimento específico; fechar pelo botão ou clicando fora.
+- Como reverter: Remover o modal `#modal-atendimento` do HTML, a classe `.tl-clickable`/listener em `renderTimeline` e as funções `abrirDetalheAtendimento`/`setupDetalheAtendimento` do `app.js`.
+
+### [2026-07-16] Ferida: seletor de paciente da ficha virou busca com sugestões
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/src/rotas/ferida.js` (Novo endpoint `GET /api/ferida/pacientes/:id` — busca um paciente específico, usado pra abrir a ficha direto por link e pelo fluxo de importação por OCR)
+  - `/saude/ferida/index.html` (O `<select>` "Paciente" — que carregava todo mundo de uma vez — virou um campo de texto com sugestões: digita o nome e busca no servidor, igual à tela "Pacientes")
+  - `/saude/ferida/app.js` (Removida a função `loadPacientes` que pré-carregava todos os pacientes; `selecionarPaciente` agora recebe o objeto do paciente direto, em vez de um id pra procurar numa lista já carregada; novas funções `setupBuscaPacienteFicha`, `buscarSugestoesFicha`, `escolherPacienteFicha`, `abrirPacientePorId`; a busca por paciente existente no fluxo de importação por OCR agora consulta o servidor em vez do array em memória)
+  - `/saude/ferida/ferida.css` (Estilo do campo de busca e do menu de sugestões, reaproveitando o mesmo visual da tela "Pacientes")
+- Tipo: Evolução de Funcionalidade / Correção de UX
+- Motivo: Pedido do usuário — a lista de todos os pacientes aparecia inteira ao abrir a ficha; o certo era só aparecer conforme a pessoa digitasse o nome, como já funciona na tela "Pacientes".
+- Impacto: Nenhuma mudança de schema. Passar a ficha (`?paciente=ID`), cadastrar, editar, excluir e importar por OCR continuam funcionando, agora todos selecionando o paciente direto pelo objeto retornado da API, sem depender de uma lista completa carregada de antemão.
+- Como testar: Abrir a ficha, digitar ao menos 2 letras de um nome cadastrado e confirmar que só aparecem sugestões compatíveis (não a lista toda); escolher uma e ver a ficha carregar; cadastrar um paciente novo e confirmar que ele é selecionado automaticamente; editar, excluir e importar por OCR e confirmar que cada fluxo ainda seleciona o paciente certo.
+- Como reverter: Restaurar o `<select id="sel-paciente">` no HTML e a função `loadPacientes` no `app.js`, revertendo `selecionarPaciente` para receber um id.
+
+### [2026-07-16] Ferida: busca de pacientes também por município e nascimento
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/src/rotas/ferida.js` (`GET /api/ferida/pacientes?busca=` agora compara o termo contra nome + município + data de nascimento — em ISO `aaaa-mm-dd` e em `dd/mm/aaaa` — não só o nome)
+  - `/saude/ferida/pacientes.html` (Placeholder e subtítulo da busca atualizados pra deixar claro que também busca por município/nascimento)
+- Tipo: Correção/Evolução de Funcionalidade
+- Motivo: A busca só considerava o nome; se a pessoa esquecesse o nome do paciente mas lembrasse a cidade ou a data de nascimento, a busca não encontrava nada.
+- Impacto: Nenhuma mudança de schema. Buscas por data aceitam tanto `12/05/1990` quanto `1990-05-12` ou só parte (ex.: `1990`).
+- Como testar: Na tela "Pacientes", buscar por um município cadastrado e por uma data de nascimento (nos dois formatos) e confirmar que o paciente aparece.
+- Como reverter: Trocar `textoBusca(p).includes(busca)` de volta para `normalizar(p.nome).includes(busca)` em `ferida.js`.
+
+### [2026-07-16] Ferida: tela "Pacientes" com busca por nome no servidor
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/saude/ferida/pacientes.html` (Nova tela: tabela com todos os pacientes — nome, nascimento/idade, município, data de cadastro — e campo de busca no topo. Reaproveita o mesmo `app.js` do módulo, só pra auth/layout/RBAC e a chamada à API; clicar numa linha abre a ficha do paciente em `index.html?paciente=ID`)
+- Arquivos alterados:
+  - `/src/rotas/ferida.js` (`GET /api/ferida/pacientes` ganhou o parâmetro opcional `?busca=`: filtra por nome no servidor, sem acento/caixa — ex.: "joao" encontra "João". A base do ambulatório é pequena, então lê a coleção toda e filtra em memória, sem exigir índice adicional no Firestore)
+  - `/saude/ferida/app.js` (`initApp` agora detecta em qual tela está — se achar `#tabela-pacientes`, entra no modo lista/busca em vez do modo ficha; a ficha passou a ler `?paciente=ID` da URL pra abrir direto no paciente vindo da lista; busca com debounce de 300ms)
+  - `/saude/ferida/index.html` (Botão "Ver todos os pacientes" no cabeçalho, ao lado de "Importar ficha")
+  - `/saude/ferida/ferida.css` (Estilos da tela de lista: busca, tabela e linha clicável)
+- Tipo: Nova Funcionalidade
+- Motivo: Pedido do usuário — faltava uma tela só de consulta aos cadastros, com busca pelo nome, sem precisar abrir a ficha e catar no seletor.
+- Impacto: Nenhuma mudança de schema. A busca é server-side (chama a API a cada digitação, com debounce) — atende ao pedido explícito de buscar "no banco" em vez de filtrar uma lista já carregada no navegador.
+- Como testar: Abrir "Ver todos os pacientes", digitar parte do nome de um paciente cadastrado (com e sem acento) e conferir que a lista filtra; limpar a busca e conferir que volta a lista completa; clicar numa linha e confirmar que abre a ficha certa já selecionada.
+- Como reverter: Remover `/saude/ferida/pacientes.html`, o parâmetro `busca` em `ferida.js`, o botão em `index.html` e as funções/estilos relacionados em `app.js`/`ferida.css`.
+
+### [2026-07-16] Ferida: editar e excluir pacientes
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/src/rotas/ferida.js` (Novo endpoint `DELETE /api/ferida/pacientes/:id`: exclusão definitiva do paciente com remoção em lote das subcoleções `atendimentos` e `fichas_antigas` — o Firestore não apaga subcoleções automaticamente; log de auditoria com uid/e-mail de quem excluiu. O `PUT` de edição já existia e ganhou tela)
+  - `/saude/ferida/index.html` (Botões de editar ✏️ e excluir 🗑️ ao lado do seletor de paciente — aparecem só com paciente selecionado e respeitam RBAC via `action-execute`; modal de paciente reutilizado para edição com campo oculto `pac-id`; upload de fichas antigas oculto no modo edição — a galeria própria já cuida disso)
+  - `/saude/ferida/app.js` (Modal em dois modos novo/editar; submit decide POST ou PUT; exclusão com confirmação DUPLA — confirm com resumo do que será perdido + digitar o nome exato do paciente; após excluir, limpa a ficha e recarrega a lista)
+  - `/saude/ferida/ferida.css` (Estilo `.pac-act` dos botões de ação do paciente)
+- Tipo: Evolução de Funcionalidade
+- Motivo: Faltava gerenciamento de pacientes — só era possível cadastrar. Decisão do usuário: editar e excluir (a opção "mover" foi descartada). Exclusão definitiva atende ao direito de eliminação (LGPD), com dupla confirmação por ser dado de saúde irrecuperável.
+- Impacto: Nenhuma mudança de schema. Exclusão remove o documento do paciente e todas as subcoleções em lotes de 400.
+- Como testar: Selecionar um paciente de teste → ✏️ altera nome/nascimento/município e salva → conferir a lista atualizada. 🗑️ → confirmar o aviso → digitar o nome exato → paciente some da lista e do Firestore (conferir subcoleções apagadas). Digitar nome errado deve cancelar. Com cargo nível 2 (leitura), os botões não aparecem.
+- Como reverter: Remover o endpoint DELETE e os botões/handlers nos arquivos do módulo.
+
+### [2026-07-16] Ferida: formulário digital alinhado à ficha de papel + escala de dor + orientações de exsudato
+- Autor: Claude Code (a pedido do usuário — alinhamento confirmado)
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/index.html` (Novo campo "Pele adjacente (10 a 20 cm)" com as 5 opções do papel; exsudato Tipo ampliado de 3 para os 6 tipos do papel — Seroso, Serosanguinolento, Sanguinolento, Purulento, Seropurulento, Hemopurulento — e Cor ampliada com Rosado e Esverdeado conforme a tabela "Características"; novo campo "Dor" (Sim/Não) com escala de intensidade 1 a 10; a tabela "Quantidade × Indicadores" do papel virou bloco expansível de ORIENTAÇÕES sob o exsudato — é apoio ao preenchimento, não campo)
+  - `/saude/ferida/app.js` (Coleta/aplicação dos novos campos `peleAdjacente` e `dor {presente, escala}`)
+  - `/src/rotas/ferida.js` (Atendimentos armazenam `peleAdjacente[]` e `dor {presente, escala 1-10}` com validação)
+  - `/saude/ferida/ferida.css` (Estilos do bloco de orientações, escala de dor e chips numéricos)
+  - `/leitor-ficha/app.py` (Pele adjacente agora é campo extraído — não mais aviso; os 6 tipos de exsudato mapeiam direto, com cor/consistência derivadas da tabela impressa para todos; dor retorna nula — não existe no papel, preenchimento manual)
+- Tipo: Evolução de Funcionalidade (alinhamento clínico)
+- Motivo: Decisão do usuário de alinhar o formulário digital a tudo que existe na ficha de papel oficial, adicionar a avaliação de dor (Sim/Não + escala 1–10, novidade do digital) e tratar a tabela de indicadores de quantidade como orientação às enfermeiras, não como campo.
+- Impacto: Atendimentos ganham os campos `peleAdjacente` e `dor`. Registros antigos não têm esses campos (leitura tolera ausência). O teste de leitura frente+verso segue 100%: pele adjacente agora chega como campo e preenche os chips automaticamente.
+- Como testar: Abrir a ficha e conferir os novos campos e o bloco "💡 Orientações" sob o exsudato; salvar um atendimento com dor Sim + escala 7 e conferir no Firestore; importar a ficha de teste e verificar os chips de pele adjacente marcados.
+- Como reverter: Remover os campos/blocos novos nos quatro arquivos e o campo no leitor.
+
+### [2026-07-16] Ferida: leitor calibrado para o layout real da ficha + detecção de opções assinaladas
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/leitor-ficha/app.py` (Reescrito com base no PDF oficial "Ficha de Avaliação da Ferida - IMPRIMIR": NOME+DATA na mesma linha, MUNICÍPIO abaixo, dimensões em tabela 2×2 com busca posicional do valor à direita do rótulo, localização, seções delimitadas pelos títulos impressos com separação de colunas — Bordas|Pele adjacente e Infecção superficial|profunda —, conduta = linhas manuscritas após "Enfermeira (o):", e DETECÇÃO DE OPÇÕES ASSINALADAS por dois sinais combinados por linha visual: marca no texto lido ("(X) ...") e análise de tinta na região do checkbox à esquerda do rótulo, com baseline relativa ao próprio grupo e altura de referência mediana — autocalibra por digitalização)
+  - `/leitor-ficha/debug_leitura.py` (Novo utilitário: mostra os itens OCR com posição e as taxas de tinta por opção, para calibrar com digitalizações reais)
+- Tipo: Calibração / Evolução do OCR
+- Motivo: O parser inicial era genérico e falhava no layout real. Com o PDF da ficha oficial, o leitor foi calibrado: em teste com frente+verso simulados (fonte cursiva + marcações X), extraiu 100% dos campos — cabeçalho, dimensões, tecido, bordas, exsudato (tipo com cor/consistência derivadas da tabela impressa + quantidade), sinais de infecção, biofilme (Sim/Não) e conduta. Pele adjacente e os tipos de exsudato sem equivalente digital (Serosanguinolento, Seropurulento, Hemopurulento) vão como avisos nas observações.
+- Impacto: Divergências mapeadas entre a ficha de papel e o formulário digital, pendentes de decisão: o papel tem "Pele adjacente" (5 opções) e 6 tipos de exsudato (o digital tem 3); o papel não tem data de nascimento. A calibração final exige uma digitalização REAL preenchida à mão (letra de caneta em papel — o teste usou fonte cursiva).
+- Como testar: `python debug_leitura.py <imagem>` mostra o que o OCR viu e as taxas de tinta; o fluxo completo via "Importar ficha (OCR)" no módulo.
+- Como reverter: Restaurar a versão anterior de `/leitor-ficha/app.py`.
+
+### [2026-07-16] Ferida: importação de fichas preenchidas com OCR local em Python (frente + verso)
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/leitor-ficha/app.py` (Serviço Flask + EasyOCR na porta 5001: recebe 1–2 imagens da ficha de papel, faz OCR local em português e extrai por heurística os campos manuscritos — nome, nascimento, município, data do atendimento, localização, dimensões em cm e conduta; o texto completo lido vai em "observações" para conferência)
+  - `/leitor-ficha/requirements.txt` e `/leitor-ficha/README.md` (dependências e instruções: venv Python 3.13, instalação e execução)
+- Arquivos alterados:
+  - `/src/rotas/ferida.js` (Endpoint `POST /api/ferida/ler-ficha` agora faz proxy autenticado — token + RBAC — para o serviço Python local, configurável por `LEITOR_FICHA_URL`; atendimentos aceitam `dataAtendimento` opcional, a data original escrita na ficha de papel)
+  - `/saude/ferida/index.html` + `app.js` + `ferida.css` (Botão "Importar ficha (OCR)" e modal em 3 etapas: fotos frente/verso → leitura → **conferência lado a lado**: a foto da ficha fica visível ao lado dos campos extraídos, todos EDITÁVEIS — nome, nascimento, município, data do atendimento, localização, dimensões e conduta — para a pessoa comparar com o papel e corrigir manualmente o que o OCR errou ou não identificou, com o texto completo lido disponível para consulta; ao aplicar, usa os valores corrigidos: reusa paciente existente pelo nome ou cadastra, anexa as fotos como fichas antigas, pré-preenche o formulário e mostra a localização como lembrete para marcar no mapa; timeline ordena/exibe pela data clínica `dataAtendimento`)
+  - `/.env_exemplo` (Variável opcional `LEITOR_FICHA_URL`) e `/.gitignore` (`leitor-ficha/.venv/`, `__pycache__/`)
+- Tipo: Nova Funcionalidade (OCR local)
+- Motivo: Digitalizar o acervo de fichas de papel do ambulatório sem enviar dado de saúde para APIs externas (LGPD): o OCR roda localmente em Python. Princípio "leitura prepara, humano confirma": a enfermeira revisa tudo antes de salvar. Limitação registrada: o OCR não detecta quais opções impressas foram assinaladas — tecido/bordas/exsudato/infecção/biofilme voltam vazios para marcação manual, e a precisão em manuscrito é parcial.
+- Impacto: Requer o serviço Python rodando (sem ele, o endpoint responde 503 com instrução clara e o restante do módulo funciona normalmente). Em produção (Vercel serverless) o serviço precisa ser hospedado em um servidor próprio/institucional e apontado por `LEITOR_FICHA_URL`. Atendimentos ganham o campo opcional `dataAtendimento`.
+- Como testar: Rodar `leitor-ficha` (README), abrir Gestão Saúde → Ferida → "Importar ficha (OCR)", enviar frente e verso de uma ficha preenchida, conferir a revisão (campos extraídos + texto completo em observações) e aplicar. Verificar: paciente criado/reusado, fotos na galeria "Fichas antigas", formulário pré-preenchido, lembrete de localização sobre o mapa e histórico com a data original após salvar. Com o serviço parado, o botão deve retornar o erro 503 orientando a iniciá-lo.
+- Como reverter: Remover a pasta `/leitor-ficha`, o endpoint `ler-ficha` e o campo `dataAtendimento` em `/src/rotas/ferida.js` e as seções de importação nos três arquivos de `/saude/ferida/`.
+
+### [2026-07-16] Ferida: silhuetas do mapa do corpo mais realistas
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/saude/ferida/index.html` (Silhuetas anterior/posterior redesenhadas como contorno anatômico contínuo — cabeça, pescoço, ombros, braços com mãos, tronco com cintura, pernas e pés; vista posterior ganhou linhas sutis de referência; pés redesenhados em vista superior com os cinco dedos no contorno e proporção realista; CORREÇÃO: rótulos D/E dos pés estavam invertidos — agora seguem a perspectiva de quem olha os próprios pés: E à esquerda, D à direita, dedões voltados ao centro)
+  - `/saude/ferida/ferida.css` (Nova classe `.sil-detalhe` para as linhas de referência do dorso)
+- Tipo: Ajuste de UI
+- Motivo: As silhuetas anteriores eram formas geométricas (círculo + retângulos) e dificultavam a localização precisa da ferida.
+- Impacto: Apenas visual; a lógica de pinos, regiões e dados salvos não muda.
+- Como testar: Abrir Gestão Saúde → Ferida e conferir as três figuras; clicar para marcar pinos e verificar que continuam funcionando.
+- Como reverter: Restaurar os SVGs anteriores no `/saude/ferida/index.html`.
+
+### [2026-07-15] Ferida: upload das fichas antigas de papel (fotos) anexadas ao paciente
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/src/rotas/ferida.js` (Novos endpoints: listar metadados, ver imagem completa, anexar e excluir em `ferida_pacientes/{id}/fichas_antigas`; validação de tipo/tamanho — data URL de imagem até ~950 mil chars, respeitando o limite de 1 MiB por documento do Firestore; autoria obrigatória em cada anexo)
+  - `/saude/ferida/index.html` (Zona de upload com arrastar-e-soltar no modal Novo Paciente com pré-visualização; botão "Fichas antigas (N)" na barra do paciente; modal galeria com lista, visualização da imagem, adicionar e excluir)
+  - `/saude/ferida/app.js` (Compressão de imagem no navegador via canvas — reduz resolução/qualidade em etapas até caber no limite do banco; envio das imagens após o cadastro do paciente; galeria de fichas antigas do paciente selecionado)
+  - `/saude/ferida/ferida.css` (Estilos da zona de upload, miniaturas, galeria e visualizador)
+  - `/regras/regra_do_app.md` (Documentação)
+- Tipo: Nova Funcionalidade
+- Motivo: O ambulatório tem fichas de papel preenchidas antes da digitalização. Ao cadastrar o paciente no sistema, a enfermeira fotografa/anexa as fichas antigas, preservando o histórico completo do paciente (fichas de papel + atendimentos digitais + retornos) em um único lugar.
+- Impacto: Nova subcoleção Firestore `ferida_pacientes/{id}/fichas_antigas` (imagem base64 comprimida + metadados + autoria). A listagem retorna só metadados; a imagem completa é buscada sob demanda ao clicar em "Ver".
+- Como testar: Em Gestão Saúde → Ferida, clicar em "Novo Paciente", preencher o nome e adicionar 1+ fotos na zona de upload; cadastrar. Selecionar o paciente e clicar em "Fichas antigas (N)" — ver a imagem, anexar mais uma e excluir uma. Conferir que com cargo nível 2 (leitura) os botões de anexar/excluir ficam ocultos.
+- Como reverter: Remover os endpoints de fichas-antigas em `/src/rotas/ferida.js` e as seções correspondentes nos três arquivos de `/saude/ferida/`.
+
+### [2026-07-15] Criação da categoria Gestão Saúde e do módulo Ferida (Ficha de Avaliação da Ferida)
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/saude/ferida/index.html` (Ficha de Avaliação da Ferida — mapa do corpo SVG clicável com pinos numerados, dimensões, tecido do leito, bordas, exsudato, sinais de infecção, biofilme, conduta e histórico de evolução)
+  - `/saude/ferida/ferida.css` (Estilos do módulo seguindo o esboço aprovado do ambulatório: paleta petróleo/turquesa e marcador clínico próprio nos pinos)
+  - `/saude/ferida/app.js` (Auth guard padrão, seleção/cadastro de paciente, marcação no mapa do corpo, coleta da ficha, salvamento e timeline de evolução com tendência melhora/estável/piora por área)
+  - `/src/rotas/ferida.js` (API REST: CRUD de pacientes em `ferida_pacientes` e atendimentos em subcoleção `atendimentos`, com autoria obrigatória — uid, nome e data/hora em cada registro)
+- Arquivos alterados:
+  - `/core/permissions.js` (Nova categoria `saude` — "Gestão Saúde" — e módulo `ferida` atribuído a ADM N1/N2)
+  - `/src/middlewares/auth.js` (Permissões padrão do módulo `ferida`: ADM N2 = 3; TI, RH e Visitante = 1 — dado de saúde é sensível, acesso só para cargos autorizados)
+  - `/usuarios/app.js` (Módulo `ferida` no painel de gerenciamento de permissões e nos defaults de novo cargo)
+  - `/api/index.js` (Registro das rotas `/api/ferida`)
+  - `/regras/regra_do_app.md` (Documentação)
+- Tipo: Nova Funcionalidade / Novo Módulo
+- Motivo: Substituir a ficha de papel do ambulatório da FATEC Ivaiporã por um mini-prontuário digital de feridas, permitindo que as enfermeiras registrem o atendimento e acompanhem a evolução da ferida do paciente ao longo dos retornos. LGPD: dado de saúde é dado pessoal sensível — todo acesso passa por token JWT + RBAC, todo registro guarda autoria/data e os cargos sem autorização têm nível 1 (sem acesso) por padrão; recomenda-se criar um cargo "Enfermeira" no módulo Usuários com nível 3 apenas em Ferida.
+- Impacto: Nova categoria "Gestão Saúde" na sidebar com o módulo "Ferida". Novas coleções Firestore: `ferida_pacientes` e subcoleções `atendimentos`.
+- Como testar: Logar como ADM N1, abrir Gestão Saúde → Ferida, cadastrar um paciente de teste, marcar a ferida no mapa do corpo, preencher a ficha e salvar. Verificar se o histórico exibe o registro com autor e a tendência (melhora/estável/piora) a partir do segundo atendimento. Logar com cargo sem permissão e conferir o redirecionamento para o Meu Espaço.
+- Como reverter: Remover a pasta `/saude`, a rota `/src/rotas/ferida.js`, o registro em `/api/index.js` e as referências em `/core/permissions.js`, `/src/middlewares/auth.js` e `/usuarios/app.js`.
+
+### [2026-07-16] Reforma da Gestão de Acessos (fonte única de módulos + permissões por usuário)
+- Autor: Equipe TI (com Claude Code)
+- Branch: main (fork Mtreck)
+- Arquivos alterados: `core/permissions.js`, `core/layout.js`, `src/middlewares/auth.js`, `src/rotas/usuarios.js`, `usuarios/app.js`, `usuarios/index.html`, `usuarios/usuarios.css`, guards de `emprestimo/`, `turmas/`, `avaliacoes/`, `empresas/`, `planejamento-academico/`, `rh/carga-horaria/`, `rh/funcionarios/`.
+- Tipo: Feature + Refactor + Segurança.
+- Motivo: A tela "Gerenciar Acessos" usava listas de módulos hardcoded e divergentes (Agenda e Funcionários nem apareciam) e não havia permissão individual por usuário.
+- Impacto:
+  - `core/permissions.js` virou a fonte única de módulos/tópicos (ver Regra Obrigatória na seção 4); a grade de acessos deriva dela, agrupada por tópico, com filtro por categoria e 4 módulos por linha.
+  - Novo override por usuário (`users/{uid}.permissoes`), aplicado no middleware do backend (vence o cargo) e refletido no menu lateral e nos guards das páginas (nível efetivo). Azul = herdado do cargo; laranja = personalizado.
+  - Novo endpoint `PUT /api/usuarios/:uid/permissoes` (só `adm_l1`); `PUT /config/permissions` agora também exige `adm_l1` (antes qualquer nível 3 em usuarios editava — brecha de escalada de privilégio).
+  - Cargo novo nasce sem acesso a nenhum módulo.
+- Como testar: como adm_l1, Usuários → Gerenciar Acessos → "Por Usuário": dar Acesso Total num módulo fora do cargo de um usuário de teste e conferir menu/página/API; dar "Sem Acesso" num módulo do cargo e conferir o bloqueio.
+- Como reverter: `git revert` do commit correspondente; remover campo `permissoes` dos docs `users` afetados.
 
 ### [2026-05-27] Criação do módulo de Turmas e Categoria Docência
 - Autor: Antigravity

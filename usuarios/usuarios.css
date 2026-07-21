@@ -665,6 +665,149 @@ body {
   gap: 1rem;
 }
 
+/* ---- Gerência de acessos: modos e por-usuário ---- */
+.module-permissions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 1200px) {
+  .module-permissions-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .module-permissions-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .module-permissions-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.perm-mode-tabs {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.perm-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.perm-mode-btn {
+  padding: 0.65rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: white;
+  border: 1.5px solid var(--border-color);
+  border-radius: 30px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.perm-mode-btn.active {
+  color: white;
+  background: var(--primary-blue);
+  border-color: var(--primary-blue);
+  box-shadow: 0 4px 12px rgba(15, 78, 184, 0.25);
+}
+
+.perm-cat-header {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 0.5rem 0 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 1rem;
+}
+
+.perm-cat-header:not(:first-child) {
+  margin-top: 0.5rem;
+}
+
+/* Acesso herdado do cargo (ativo) = azul (padrão .perm-card.active);
+   acesso PERSONALIZADO do usuário = laranja */
+.perm-card.override,
+.perm-card.override.active {
+  border-color: var(--accent-orange, #EB7025);
+  background: rgba(235, 112, 37, 0.08);
+  box-shadow: 0 0 16px rgba(235, 112, 37, 0.15);
+}
+
+/* Pills de filtro por tópico */
+.perm-cat-filter {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.perm-cat-pill {
+  padding: 0.45rem 1.1rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: white;
+  border: 1.5px solid var(--border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.perm-cat-pill:hover {
+  border-color: var(--primary-blue);
+  color: var(--primary-blue);
+}
+
+.perm-cat-pill.active {
+  color: white;
+  background: var(--primary-blue);
+  border-color: var(--primary-blue);
+}
+
+.perm-user-info {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.perm-override-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+}
+
+.perm-card-title svg {
+  width: 18px;
+  height: 18px;
+  color: var(--primary-blue);
+  flex-shrink: 0;
+}
+
 .perm-checkbox {
   font-size: 0.8rem;
   font-weight: 600;
