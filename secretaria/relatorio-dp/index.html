@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório DP - Órbita FATEC</title>
+    <link rel="icon" type="image/png" href="/img/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/core/layout.css">
+    <link rel="stylesheet" href="/secretaria/relatorio-dp/relatorio-dp.css">
+</head>
+<body>
+    <div id="auth-guard" class="layout-auth-guard">
+        <div class="layout-spinner"></div>
+        <h3 style="color:var(--text-main); font-weight:600;">Autenticando...</h3>
+    </div>
+
+    <div id="app" class="layout-wrapper hidden">
+        <main class="layout-main">
+            <div class="layout-content dp-content">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Relatório DP</h1>
+                        <p class="page-subtitle">Alunos em dependência — acompanhamento por curso e disciplina</p>
+                    </div>
+                    <div class="page-header-actions">
+                        <a class="btn-secondary" href="relatorio.html" style="text-decoration:none;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                            Gerar relatório
+                        </a>
+                        <label class="btn-import action-execute" for="edubox-input">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            Importar CSV do Edubox
+                        </label>
+                        <input type="file" id="edubox-input" accept=".csv" class="dp-hidden-input action-execute">
+                        <button class="btn-primary action-execute" id="btn-nova-disciplina">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Adicionar disciplina
+                        </button>
+                    </div>
+                </div>
+
+                <div class="dp-layout">
+                    <aside class="dp-sidebar">
+                        <div class="dp-overall">
+                            <div class="dp-overall-num" id="dp-overall-num">0/0</div>
+                            <div class="dp-overall-lbl">alunos classificados no total</div>
+                            <div class="dp-bar-outer"><div class="dp-bar-inner" id="dp-overall-bar" style="width:0%"></div></div>
+                        </div>
+                        <ul class="dp-course-list" id="dp-course-list"></ul>
+                    </aside>
+
+                    <div class="dp-main">
+                        <div class="filters-bar">
+                            <div class="search-wrap">
+                                <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                <input type="search" id="dp-search" class="search-input" placeholder="Buscar aluno por nome em todos os cursos...">
+                            </div>
+                            <div class="dp-save-status" id="dp-save-status"></div>
+                        </div>
+
+                        <div class="dp-legend">
+                            <span><span class="dp-swatch dp-swatch-cursar"></span> A cursar</span>
+                            <span><span class="dp-swatch dp-swatch-cursando"></span> Cursando a disciplina</span>
+                            <span><span class="dp-swatch dp-swatch-cursou"></span> Cursou a disciplina</span>
+                            <span><span class="dp-swatch dp-swatch-cancelou"></span> Cancelou / Trancou / Desistiu / Retido</span>
+                        </div>
+
+                        <h2 id="dp-course-title" class="dp-course-title">Selecione um curso</h2>
+                        <div id="dp-table-wrap"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Revisar e confirmar importação do CSV do Edubox -->
+    <div id="modal-preview-import" class="modal-overlay hidden">
+        <div class="modal-content modal-content-lg">
+            <h2>Confirmar importação</h2>
+            <p class="hint" id="preview-resumo" style="margin-top:-8px"></p>
+            <div class="preview-toolbar">
+                <span id="preview-contador"></span>
+                <span class="preview-toolbar-actions">
+                    <button type="button" class="preview-link-btn" id="btn-preview-selecionar-todos">Selecionar todos</button>
+                    ·
+                    <button type="button" class="preview-link-btn" id="btn-preview-selecionar-nenhum">Nenhum</button>
+                </span>
+            </div>
+            <div id="preview-lista" class="preview-lista"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="btn-cancelar-preview">Cancelar</button>
+                <button type="button" class="btn-primary" id="btn-confirmar-preview">Confirmar e importar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Adicionar disciplina manualmente -->
+    <div id="modal-disciplina" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Adicionar disciplina</h2>
+            <form id="form-disciplina">
+                <div class="form-group">
+                    <label>Curso *</label>
+                    <input type="text" id="disc-curso" list="dp-cursos-datalist" placeholder="Ex: ENFERMAGEM" required>
+                    <datalist id="dp-cursos-datalist"></datalist>
+                </div>
+                <div class="form-group">
+                    <label>Nome do aluno *</label>
+                    <input type="text" id="disc-nome" required>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Turma *</label>
+                        <input type="text" id="disc-turma" placeholder="Ex: 2026/1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Disciplina *</label>
+                        <input type="text" id="disc-disciplina" required>
+                    </div>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Professor</label>
+                        <input type="text" id="disc-professor">
+                    </div>
+                    <div class="form-group">
+                        <label>Período contemplado</label>
+                        <input type="text" id="disc-periodo">
+                    </div>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Financeiro</label>
+                        <input type="text" id="disc-financeiro">
+                    </div>
+                    <div class="form-group">
+                        <label>Status inicial</label>
+                        <select id="disc-status">
+                            <option value="A_CURSAR">A cursar</option>
+                            <option value="CURSANDO">Cursando</option>
+                            <option value="CURSOU">Cursou</option>
+                            <option value="CANCELOU">Cancelou/Trancou</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-cancelar-disciplina">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-salvar-disciplina">Adicionar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Editar aluno (nome/turma — aplica em todas as disciplinas dele) -->
+    <div id="modal-editar-aluno" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Editar aluno</h2>
+            <form id="form-editar-aluno">
+                <div class="form-group">
+                    <label>Nome *</label>
+                    <input type="text" id="edit-aluno-nome" required>
+                </div>
+                <div class="form-group">
+                    <label>Turma *</label>
+                    <input type="text" id="edit-aluno-turma" required>
+                </div>
+                <p class="hint" style="margin:0 0 4px">Isso atualiza todas as disciplinas desse aluno nesta turma.</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-cancelar-editar-aluno">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script type="module" src="/secretaria/relatorio-dp/app.js"></script>
+</body>
+</html>

@@ -3,7 +3,8 @@ export const CATEGORIES = {
   rh: "Recursos Humanos",
   admin: "Administrativo",
   docencia: "Docência",
-  saude: "Gestão Saúde"
+  saude: "Gestão Saúde",
+  secretaria: "Secretaria"
 };
 
 export const MODULES = {
@@ -95,17 +96,24 @@ export const MODULES = {
     title: "Almoxarifado Feridas",
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>`,
     url: "/saude/almoxarifado-feridas/index.html"
+  },
+  "relatorio-dp": {
+    id: "relatorio-dp",
+    category: "secretaria",
+    title: "Relatório DP",
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
+    url: "/secretaria/relatorio-dp/index.html"
   }
 };
 
 export const ROLE_PERMISSIONS = {
   adm_l1: {
     label: "ADM N1",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas", "relatorio-dp"]
   },
   adm_l2: {
     label: "ADM N2",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas", "relatorio-dp"]
   },
   ti: {
     label: "T.I.",
