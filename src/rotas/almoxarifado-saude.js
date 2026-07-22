@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../firebase');
+const { db, admin } = require('../firebase');
 const verifyToken = require('../middlewares/auth');
 
 // Middleware para verificar permissão do módulo (Gestão Saúde)
@@ -51,37 +51,130 @@ router.get('/localizacoes', verifyToken, checkPermission, (req, res) => {
 // ITENS
 // ==========================================
 
-// GET /api/almoxarifado-saude/itens?categoria=Consumível|Permanente
+const PAGE_SIZE_PADRAO = 40;
+const PAGE_SIZE_MAX = 100;
+
+// Anexa a validade mais próxima entre os lotes de cada item (1 única consulta,
+// só pros itens já carregados nesta página — não a coleção de lotes inteira).
+async function anexarProximaValidade(itens) {
+    if (!itens.length) return;
+    const ids = itens.map(it => it.id);
+    const proximaPorItem = {};
+    // Firestore limita "in" a 30 valores por consulta
+    for (let i = 0; i < ids.length; i += 30) {
+        const chunk = ids.slice(i, i + 30);
+        const snap = await db.collection(COL_LOTES).where('itemId', 'in', chunk).where('validade', '!=', null).get();
+        snap.forEach(doc => {
+            const { itemId, validade } = doc.data();
+            if (!proximaPorItem[itemId] || validade < proximaPorItem[itemId]) {
+                proximaPorItem[itemId] = validade;
+            }
+        });
+    }
+    itens.forEach(it => { it.proximaValidade = proximaPorItem[it.id] || null; });
+}
+
+// GET /api/almoxarifado-saude/itens?categoria=&localizacao=&busca=&limit=&cursor=
+// Paginado (evita carregar os 500-900+ itens da categoria de uma vez só, o
+// que custava centenas de leituras do Firestore a cada abertura da tela).
 router.get('/itens', verifyToken, checkPermission, async (req, res) => {
     try {
-        const { categoria } = req.query;
-        let query = db.collection(COL_ITENS);
-        if (categoria) {
-            if (!CATEGORIAS.includes(categoria)) {
-                return res.status(400).json({ error: 'Categoria inválida.' });
+        const { categoria, localizacao, busca } = req.query;
+        if (!categoria || !CATEGORIAS.includes(categoria)) {
+            return res.status(400).json({ error: 'Informe uma categoria válida ("Permanente" ou "Consumível").' });
+        }
+        if (localizacao && !LOCALIZACOES.includes(localizacao)) {
+            return res.status(400).json({ error: 'Localização inválida.' });
+        }
+
+        const limit = Math.min(PAGE_SIZE_MAX, Math.max(1, parseInt(req.query.limit) || PAGE_SIZE_PADRAO));
+
+        let query = db.collection(COL_ITENS).where('categoria', '==', categoria);
+        if (localizacao) query = query.where('localizacao', '==', localizacao);
+
+        // Busca por prefixo do nome (case-sensitive — os dados importados estão
+        // em CAIXA ALTA; cadastros novos devem seguir o mesmo padrão pra busca funcionar bem)
+        if (busca && busca.trim()) {
+            const termo = busca.trim();
+            query = query.orderBy('nome').startAt(termo).endAt(termo + '');
+        } else {
+            query = query.orderBy('nome');
+            if (req.query.cursor) {
+                query = query.startAfter(req.query.cursor);
             }
-            query = query.where('categoria', '==', categoria);
         }
-        const snap = await query.orderBy('nome').get();
-        const itens = [];
-        snap.forEach(doc => itens.push({ id: doc.id, ...doc.data() }));
 
-        // Para Consumível, anexa a validade mais próxima entre os lotes do item
-        // (1 única consulta pra todos os lotes com validade preenchida, em vez
-        // de 1 consulta por item) — usado pros badges/filtro de vencimento.
-        if (categoria === 'Consumível' && itens.length) {
-            const lotesSnap = await db.collection(COL_LOTES).where('validade', '!=', null).get();
-            const proximaPorItem = {};
-            lotesSnap.forEach(doc => {
-                const { itemId, validade } = doc.data();
-                if (!proximaPorItem[itemId] || validade < proximaPorItem[itemId]) {
-                    proximaPorItem[itemId] = validade;
-                }
+        const snap = await query.limit(limit + 1).get();
+        const docs = snap.docs.slice(0, limit);
+        const hasMore = snap.docs.length > limit;
+
+        const itens = docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (categoria === 'Consumível') {
+            await anexarProximaValidade(itens);
+        }
+
+        res.json({
+            itens,
+            hasMore,
+            proximoCursor: hasMore ? itens[itens.length - 1].nome : null
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/almoxarifado-saude/itens/alertas?categoria=&tipo=baixo|vencimento
+// Modo separado da listagem paginada — usado pelos filtros "só estoque baixo"
+// e "só vencendo/vencido". Como esses casos tendem a ser poucos itens (a
+// maioria não tem estoqueMinimo/validade definidos), a consulta já sai
+// pequena por natureza, sem precisar paginar.
+router.get('/itens/alertas', verifyToken, checkPermission, async (req, res) => {
+    try {
+        const { categoria, tipo } = req.query;
+        if (!categoria || !CATEGORIAS.includes(categoria)) {
+            return res.status(400).json({ error: 'Informe uma categoria válida.' });
+        }
+        if (tipo !== 'baixo' && tipo !== 'vencimento') {
+            return res.status(400).json({ error: 'Tipo de alerta inválido. Use "baixo" ou "vencimento".' });
+        }
+
+        if (tipo === 'baixo') {
+            const snap = await db.collection(COL_ITENS)
+                .where('categoria', '==', categoria)
+                .where('estoqueMinimo', '>', 0)
+                .get();
+            const itens = snap.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(it => it.quantidade <= it.estoqueMinimo)
+                .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+            if (categoria === 'Consumível') await anexarProximaValidade(itens);
+            return res.json({ itens, hasMore: false, proximoCursor: null });
+        }
+
+        // tipo === 'vencimento': só existe pra Consumível (Permanente não tem lote)
+        if (categoria !== 'Consumível') {
+            return res.json({ itens: [], hasMore: false, proximoCursor: null });
+        }
+        const hoje = new Date().toISOString().slice(0, 10);
+        const limite = new Date(Date.now() + DIAS_VENCENDO * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const lotesSnap = await db.collection(COL_LOTES).where('validade', '<=', limite).get();
+        const itemIds = [...new Set(lotesSnap.docs.map(d => d.data().itemId))];
+        if (!itemIds.length) return res.json({ itens: [], hasMore: false, proximoCursor: null });
+
+        const itensPorId = {};
+        for (let i = 0; i < itemIds.length; i += 30) {
+            const chunk = itemIds.slice(i, i + 30);
+            const snap = await db.collection(COL_ITENS)
+                .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
+                .get();
+            snap.forEach(doc => {
+                if (doc.data().categoria === categoria) itensPorId[doc.id] = { id: doc.id, ...doc.data() };
             });
-            itens.forEach(it => { it.proximaValidade = proximaPorItem[it.id] || null; });
         }
-
-        res.json(itens);
+        const itens = Object.values(itensPorId);
+        await anexarProximaValidade(itens);
+        itens.sort((a, b) => (a.proximaValidade || '9999').localeCompare(b.proximaValidade || '9999'));
+        res.json({ itens, hasMore: false, proximoCursor: null });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -438,6 +531,34 @@ router.get('/stats', verifyToken, checkPermission, async (req, res) => {
             vencendo: vencendoSnap.data().count,
             diasVencendo: DIAS_VENCENDO
         });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
+// RELATÓRIO DE ESTOQUE (snapshot completo, gerado sob demanda)
+// ==========================================
+
+// GET /api/almoxarifado-saude/relatorio-estoque?categoria=
+// Ao contrário de GET /itens (paginado), aqui traz a categoria inteira de
+// propósito — é uma ação explícita e ocasional (clicar em "Gerar relatório"),
+// não algo disparado a cada abertura de tela/troca de aba.
+router.get('/relatorio-estoque', verifyToken, checkPermission, async (req, res) => {
+    try {
+        const { categoria } = req.query;
+        if (!categoria || !CATEGORIAS.includes(categoria)) {
+            return res.status(400).json({ error: 'Informe uma categoria válida.' });
+        }
+
+        const snap = await db.collection(COL_ITENS).where('categoria', '==', categoria).orderBy('nome').get();
+        const itens = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        if (categoria === 'Consumível') {
+            await anexarProximaValidade(itens);
+        }
+
+        res.json(itens);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

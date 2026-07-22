@@ -22,6 +22,10 @@ let initializedRole = null;
 let categoriaAtual = 'Consumível';
 let itens = [];
 let localizacoes = [];
+let proximoCursor = null;
+let hasMaisAtual = false;
+let carregandoMais = false;
+let buscaDebounce = null;
 
 let itemAtual = null;       // item aberto no modal de movimentação
 let lotesAtuais = [];       // lotes do item aberto no modal de movimentação
@@ -121,6 +125,18 @@ async function initApp(user, role) {
   });
 
   document.getElementById('app').classList.remove('hidden');
+
+  // relatorio-estoque.html e relatorio-movimentacoes.html reaproveitam este
+  // app.js só pra auth/layout + a própria tela (mesmo padrão do Almoxarifado Feridas)
+  if (document.getElementById('relatorio-estoque-conteudo')) {
+    initPaginaRelatorioEstoque();
+    return;
+  }
+  if (document.getElementById('relatorio-movimentacoes-conteudo')) {
+    initPaginaRelatorioMovimentacoes();
+    return;
+  }
+
   document.body.classList.toggle('categoria-permanente', categoriaAtual === 'Permanente');
 
   setupTabs();
@@ -152,7 +168,16 @@ async function trocarAba(categoria) {
   document.getElementById('filtro-baixo-estoque').checked = false;
   document.getElementById('search-itens').value = '';
   document.getElementById('filtro-localizacao').value = '';
+  document.getElementById('link-relatorio-estoque').href = `/saude/almoxarifado-saude/relatorio-estoque.html?categoria=${encodeURIComponent(categoria)}`;
   await Promise.all([loadItens(), loadStats()]);
+}
+
+// Modo de listagem atual: navegação normal (paginada) ou um dos alertas
+// (baixo estoque / vencimento), que usam um endpoint dedicado e mais enxuto.
+function modoAlertaAtivo() {
+  if (document.getElementById('filtro-baixo-estoque').checked) return 'baixo';
+  if (document.getElementById('filtro-vencimento').checked) return 'vencimento';
+  return null;
 }
 
 // ==========================================
@@ -176,14 +201,43 @@ async function loadLocalizacoes() {
 // ITENS
 // ==========================================
 
+// Carrega a 1ª página (ou reinicia a busca/filtro do zero). A listagem é
+// paginada no servidor — evita trazer os 500-900+ itens da categoria de uma
+// vez só (o que consumia centenas de leituras do Firestore a cada acesso).
 async function loadItens() {
   const lista = document.getElementById('itens-list');
+  itens = [];
+  proximoCursor = null;
+  lista.innerHTML = '<div class="empty-state"><p>Carregando itens...</p></div>';
+  await carregarPagina(true);
+}
+
+async function carregarPagina(primeira) {
+  if (carregandoMais) return;
+  carregandoMais = true;
+  const lista = document.getElementById('itens-list');
   try {
-    lista.innerHTML = '<div class="empty-state"><p>Carregando itens...</p></div>';
-    itens = await apiFetch(`/almoxarifado-saude/itens?categoria=${encodeURIComponent(categoriaAtual)}`);
-    aplicarFiltros();
+    const alerta = modoAlertaAtivo();
+    let resp;
+    if (alerta) {
+      resp = await apiFetch(`/almoxarifado-saude/itens/alertas?categoria=${encodeURIComponent(categoriaAtual)}&tipo=${alerta}`);
+    } else {
+      const busca = document.getElementById('search-itens').value.trim();
+      const localizacao = document.getElementById('filtro-localizacao').value;
+      const params = new URLSearchParams({ categoria: categoriaAtual });
+      if (busca) params.set('busca', busca);
+      if (localizacao) params.set('localizacao', localizacao);
+      if (!primeira && proximoCursor) params.set('cursor', proximoCursor);
+      resp = await apiFetch(`/almoxarifado-saude/itens?${params.toString()}`);
+    }
+    itens = primeira ? resp.itens : [...itens, ...resp.itens];
+    proximoCursor = resp.proximoCursor;
+    hasMaisAtual = resp.hasMore;
+    renderItens(itens, hasMaisAtual);
   } catch (err) {
     lista.innerHTML = `<div class="empty-state"><p>Erro ao carregar: ${esc(err.message)}</p></div>`;
+  } finally {
+    carregandoMais = false;
   }
 }
 
@@ -209,10 +263,19 @@ function renderResumo(stats) {
 }
 
 function setupFiltros() {
-  document.getElementById('search-itens').addEventListener('input', aplicarFiltros);
-  document.getElementById('filtro-localizacao').addEventListener('change', aplicarFiltros);
-  document.getElementById('filtro-baixo-estoque').addEventListener('change', aplicarFiltros);
-  document.getElementById('filtro-vencimento').addEventListener('change', aplicarFiltros);
+  document.getElementById('search-itens').addEventListener('input', () => {
+    clearTimeout(buscaDebounce);
+    buscaDebounce = setTimeout(loadItens, 350);
+  });
+  document.getElementById('filtro-localizacao').addEventListener('change', loadItens);
+  document.getElementById('filtro-baixo-estoque').addEventListener('change', (e) => {
+    if (e.target.checked) document.getElementById('filtro-vencimento').checked = false;
+    loadItens();
+  });
+  document.getElementById('filtro-vencimento').addEventListener('change', (e) => {
+    if (e.target.checked) document.getElementById('filtro-baixo-estoque').checked = false;
+    loadItens();
+  });
 }
 
 function statusVencimento(item) {
@@ -224,29 +287,12 @@ function statusVencimento(item) {
   return null;
 }
 
-function aplicarFiltros() {
-  const query = (document.getElementById('search-itens').value || '').toLowerCase();
-  const localizacao = document.getElementById('filtro-localizacao').value;
-  const soBaixo = document.getElementById('filtro-baixo-estoque').checked;
-  const soVencimento = document.getElementById('filtro-vencimento').checked;
-
-  const filtrados = itens.filter(it => {
-    const matchQuery = !query || it.nome.toLowerCase().includes(query);
-    const matchLocal = !localizacao || it.localizacao === localizacao;
-    const baixo = it.estoqueMinimo > 0 && it.quantidade <= it.estoqueMinimo;
-    const matchBaixo = !soBaixo || baixo;
-    const matchVencimento = !soVencimento || !!statusVencimento(it);
-    return matchQuery && matchLocal && matchBaixo && matchVencimento;
-  });
-  renderItens(filtrados);
-}
-
-function renderItens(lista) {
+function renderItens(lista, hasMore) {
   const container = document.getElementById('itens-list');
   container.innerHTML = '';
 
   if (!lista.length) {
-    container.innerHTML = `<div class="empty-state"><p>${itens.length ? 'Nenhum item corresponde ao filtro.' : 'Nenhum item cadastrado ainda.'}</p></div>`;
+    container.innerHTML = '<div class="empty-state"><p>Nenhum item encontrado.</p></div>';
     return;
   }
 
@@ -278,6 +324,14 @@ function renderItens(lista) {
     card.querySelector('[data-acao="excluir"]').addEventListener('click', () => excluirItem(item));
     container.appendChild(card);
   });
+
+  if (hasMore) {
+    const btnWrap = document.createElement('div');
+    btnWrap.className = 'alx-carregar-mais';
+    btnWrap.innerHTML = '<button type="button" class="btn-secondary" id="btn-carregar-mais">Carregar mais</button>';
+    btnWrap.querySelector('button').addEventListener('click', () => carregarPagina(false));
+    container.appendChild(btnWrap);
+  }
 }
 
 // ==========================================
@@ -562,7 +616,7 @@ async function registrarMovimentacao(e) {
 
     const itemNaLista = itens.find(it => it.id === itemAtual.id);
     if (itemNaLista) itemNaLista.quantidade = resp.quantidadeItem;
-    aplicarFiltros();
+    renderItens(itens, hasMaisAtual);
 
     // Recarrega lotes e histórico do item (mudou de verdade, precisa da fonte)
     const [lotes, historico] = await Promise.all([
@@ -581,6 +635,175 @@ async function registrarMovimentacao(e) {
     btn.disabled = false;
     btn.textContent = 'Registrar';
   }
+}
+
+// ==========================================
+// RELATÓRIO: ESTOQUE (relatorio-estoque.html)
+// ==========================================
+
+async function initPaginaRelatorioEstoque() {
+  const msg = document.getElementById('relatorio-estoque-msg');
+  const btnImprimir = document.getElementById('btn-imprimir-relatorio-estoque');
+  const params = new URLSearchParams(window.location.search);
+  const categoria = params.get('categoria') === 'Permanente' ? 'Permanente' : 'Consumível';
+
+  try {
+    const itensTodos = await apiFetch(`/almoxarifado-saude/relatorio-estoque?categoria=${encodeURIComponent(categoria)}`);
+    renderRelatorioEstoque(itensTodos, categoria);
+    msg.classList.add('hidden');
+    btnImprimir.disabled = false;
+    btnImprimir.addEventListener('click', () => window.print());
+  } catch (err) {
+    msg.innerHTML = `<p class="hint" style="margin:0; color:#b3453c">Erro ao carregar relatório: ${esc(err.message)}</p>`;
+  }
+}
+
+function renderRelatorioEstoque(itensTodos, categoria) {
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const total = itensTodos.length;
+  const baixo = itensTodos.filter(it => it.estoqueMinimo > 0 && it.quantidade <= it.estoqueMinimo).length;
+
+  // Agrupa por localização, na mesma lógica do levantamento físico original (por sala/laboratório)
+  const porLocal = {};
+  itensTodos.forEach(it => {
+    const loc = it.localizacao || 'Sem localização';
+    (porLocal[loc] = porLocal[loc] || []).push(it);
+  });
+  const locaisOrdenados = Object.keys(porLocal).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  const colunaValidade = categoria === 'Consumível';
+  const secoes = locaisOrdenados.map(loc => {
+    const linhas = porLocal[loc]
+      .slice()
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+      .map(it => {
+        const emBaixo = it.estoqueMinimo > 0 && it.quantidade <= it.estoqueMinimo;
+        const vencimento = statusVencimento(it);
+        return `
+          <tr>
+            <td>${esc(it.nome)}</td>
+            <td>${esc(it.unidade)}</td>
+            <td>${it.quantidade}</td>
+            <td>${it.estoqueMinimo > 0 ? it.estoqueMinimo : '—'}</td>
+            ${colunaValidade ? `<td>${it.proximaValidade ? esc(it.proximaValidade.split('-').reverse().join('/')) : '—'}</td>` : ''}
+            <td>${emBaixo ? '<span class="rel-badge-baixo">⚠ Baixo</span>' : (vencimento === 'vencido' ? '<span class="rel-badge-baixo">⏰ Vencido</span>' : (vencimento === 'vencendo' ? '<span class="rel-badge-baixo">⏳ Vencendo</span>' : 'OK'))}</td>
+          </tr>`;
+      }).join('');
+
+    return `
+      <h2 class="rel-secao">${esc(loc)} (${porLocal[loc].length})</h2>
+      <table class="rel-tabela">
+        <thead><tr><th>Item</th><th>Unidade</th><th>Quantidade</th><th>Mínimo</th>${colunaValidade ? '<th>Próx. validade</th>' : ''}<th>Status</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>`;
+  }).join('');
+
+  document.getElementById('relatorio-estoque-conteudo').innerHTML = `
+    <div class="rel-cabecalho">
+      <img src="/img/fateclogoazul.png" alt="Fatec Ivaiporã" class="rel-logo">
+      <div class="rel-titulo">
+        <h1>Relatório de Estoque — Almoxarifado Saúde (${esc(categoria)})</h1>
+        <p>Setor de Saúde · FATEC Ivaiporã</p>
+      </div>
+      <div class="rel-data-emissao">Emitido em ${hoje}</div>
+    </div>
+
+    <div class="rel-resumo">
+      <div class="rel-resumo-card"><b>${total}</b><span>Item${total === 1 ? '' : 's'} cadastrado${total === 1 ? '' : 's'}</span></div>
+      <div class="rel-resumo-card"><b>${baixo}</b><span>Com estoque baixo</span></div>
+      <div class="rel-resumo-card"><b>${locaisOrdenados.length}</b><span>Localizaç${locaisOrdenados.length === 1 ? 'ão' : 'ões'}</span></div>
+    </div>
+
+    ${secoes || '<p class="rel-vazio">Nenhum item cadastrado nesta categoria.</p>'}
+  `;
+}
+
+// ==========================================
+// RELATÓRIO: MOVIMENTAÇÕES (relatorio-movimentacoes.html)
+// ==========================================
+
+function initPaginaRelatorioMovimentacoes() {
+  const hoje = new Date();
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+  const fimHoje = hoje.toISOString().slice(0, 10);
+  document.getElementById('mov-filtro-inicio').value = inicioMes;
+  document.getElementById('mov-filtro-fim').value = fimHoje;
+
+  document.getElementById('btn-gerar-relatorio-mov').addEventListener('click', gerarRelatorioMovimentacoes);
+  document.getElementById('btn-imprimir-relatorio-mov').addEventListener('click', () => window.print());
+}
+
+async function gerarRelatorioMovimentacoes() {
+  const msg = document.getElementById('relatorio-movimentacoes-msg');
+  const btnImprimir = document.getElementById('btn-imprimir-relatorio-mov');
+  const inicio = document.getElementById('mov-filtro-inicio').value;
+  const fim = document.getElementById('mov-filtro-fim').value;
+
+  if (!inicio || !fim) {
+    showToast('Escolha o período (início e fim)', 'error');
+    return;
+  }
+
+  btnImprimir.disabled = true;
+  msg.classList.remove('hidden');
+  msg.innerHTML = '<p class="hint" style="margin:0">Gerando relatório...</p>';
+  try {
+    const movimentacoes = await apiFetch(`/almoxarifado-saude/movimentacoes?inicio=${inicio}&fim=${fim}`);
+    renderRelatorioMovimentacoes(movimentacoes, inicio, fim);
+    msg.classList.add('hidden');
+    btnImprimir.disabled = false;
+  } catch (err) {
+    msg.innerHTML = `<p class="hint" style="margin:0; color:#b3453c">Erro ao gerar relatório: ${esc(err.message)}</p>`;
+  }
+}
+
+function renderRelatorioMovimentacoes(movimentacoes, inicio, fim) {
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const entradas = movimentacoes.filter(m => m.tipo === 'entrada');
+  const saidas = movimentacoes.filter(m => m.tipo === 'saida');
+  const totalEntradas = entradas.reduce((s, m) => s + m.quantidade, 0);
+  const totalSaidas = saidas.reduce((s, m) => s + m.quantidade, 0);
+  const periodo = `${fmtDataBr(inicio)} a ${fmtDataBr(fim)}`;
+
+  const linhas = movimentacoes.map(m => {
+    const quando = new Date(m.realizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `
+      <tr>
+        <td>${esc(quando)}</td>
+        <td>${esc(m.itemNome || '—')}</td>
+        <td>${esc(m.lote || '—')}</td>
+        <td>${m.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
+        <td>${m.quantidade}</td>
+        <td>${esc(m.motivo || '—')}</td>
+      </tr>`;
+  }).join('');
+
+  document.getElementById('relatorio-movimentacoes-conteudo').innerHTML = `
+    <div class="rel-cabecalho">
+      <img src="/img/fateclogoazul.png" alt="Fatec Ivaiporã" class="rel-logo">
+      <div class="rel-titulo">
+        <h1>Relatório de Movimentações — Almoxarifado Saúde</h1>
+        <p>Setor de Saúde · FATEC Ivaiporã · Período: ${periodo}</p>
+      </div>
+      <div class="rel-data-emissao">Emitido em ${hoje}</div>
+    </div>
+
+    <div class="rel-resumo">
+      <div class="rel-resumo-card"><b>${entradas.length}</b><span>Entradas (${totalEntradas})</span></div>
+      <div class="rel-resumo-card"><b>${saidas.length}</b><span>Saídas (${totalSaidas})</span></div>
+      <div class="rel-resumo-card"><b>${totalEntradas - totalSaidas}</b><span>Saldo do período</span></div>
+    </div>
+
+    <h2 class="rel-secao">Movimentações (${movimentacoes.length})</h2>
+    <table class="rel-tabela">
+      <thead><tr><th>Data</th><th>Item</th><th>Lote</th><th>Tipo</th><th>Quantidade</th><th>Motivo</th></tr></thead>
+      <tbody>${linhas || `<tr><td colspan="6" class="rel-vazio">Nenhuma movimentação no período.</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function fmtDataBr(iso) {
+  return iso ? iso.split('-').reverse().join('/') : '—';
 }
 
 // ==========================================
