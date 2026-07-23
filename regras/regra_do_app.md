@@ -162,6 +162,22 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 - Impacto: Nenhuma coleção nova — o módulo passa a operar sobre dados já existentes (`almoxarifado_itens`: 1520 itens; `almoxarifado_lotes`: 1434 lotes, todos sem validade definida até aqui). A lista de localizações é fixa no backend (`LOCALIZACOES`), batendo com os valores já usados nos dados importados. Limite de "vencendo" fixado em 60 dias (constante `DIAS_VENCENDO`, ajustável só no código por ora).
 - Como testar: Acessar Almoxarifado Saúde → aba Consumíveis, cadastrar item novo com quantidade inicial e validade, dar entrada (lote novo e lote existente) e saída (escolhendo o lote), conferir que o resumo (estoque baixo/vencendo/vencidos) atualiza; na aba Patrimônio, cadastrar item e usar "Conferir" para ajustar a quantidade contada; excluir um item de teste em cada aba e confirmar que lotes/movimentações somem junto.
 - Como reverter: Remover a pasta `/saude/almoxarifado-saude`, a rota `/src/rotas/almoxarifado-saude.js`, o registro em `/api/index.js`, as referências em `/core/permissions.js` e `/src/middlewares/auth.js`, e os 2 índices compostos em `/firestore.indexes.json` (também removê-los do console do Firebase, já que índices publicados não são revertidos automaticamente).
+### [2026-07-17] Novo módulo: Acessos (Gestão de T.I.) — cofre de credenciais
+- Autor: Claude Code
+- Branch: main
+- Arquivos criados:
+  - `/src/rotas/acessos.js` (CRUD de credenciais em `acessos_credenciais`. Senhas são CRIPTOGRAFADAS com AES-256-GCM antes de salvar — nunca em texto puro no banco. A listagem NUNCA devolve a senha, só metadados; revelar a senha é uma rota separada (`POST /:id/revelar`) que decifra sob demanda e registra a visualização — quem e quando — em `acessos_credenciais/{id}/visualizacoes`)
+  - `/ti/acessos/index.html`, `app.js`, `acessos.css` (Lista de credenciais por categoria com busca; botão "Mostrar/Ocultar" que busca a senha decifrada só quando clicado; modal de cadastro/edição — senha opcional na edição, mantém a atual se deixada em branco; modal de histórico de quem já viu cada senha)
+- Arquivos alterados:
+  - `/core/permissions.js` (Módulo `acessos` na categoria "Gestão de T.I."; adicionado aos `modules` de ADM N1 e T.I. — NÃO adicionado a ADM N2, RH ou Visitante, por decisão explícita do usuário)
+  - `/src/middlewares/auth.js` (Permissões padrão: T.I. = 3 (acesso total, é o dono do módulo); ADM N2, RH e Visitante = 1 (sem acesso). ADM N1 sempre tem acesso total via bypass já existente no middleware)
+  - `/api/index.js` (Registro das rotas)
+  - `/.env_exemplo` (Nova variável `ACESSOS_ENCRYPTION_KEY`, com instrução de como gerar)
+- Tipo: Novo Módulo (dado sensível — nível de segurança acima do padrão)
+- Motivo: Centralizar as senhas de sistemas do setor, credenciais criadas para funcionários (servidor, e-mails) e os acessos do próprio Órbita de cada usuária, hoje provavelmente espalhados em anotações soltas. Por serem literalmente "a chave de tudo", o módulo foi construído com cuidado extra em relação aos demais: criptografia em repouso e auditoria de toda revelação de senha — indo além do padrão RBAC+autoria já usado no resto do sistema.
+- Impacto: Requer `ACESSOS_ENCRYPTION_KEY` configurada no `.env` (local, já gerada e aplicada nesta máquina) e nas variáveis de ambiente do Vercel em produção. **Sem essa chave, o módulo responde 503 com instrução clara, sem afetar o restante do sistema.** Se a chave for perdida ou trocada, as senhas já cadastradas não podem mais ser recuperadas — deve ser guardada com segurança (ex.: no próprio cofre institucional, fora do repositório).
+- Como testar: Logar como ADM N1 ou T.I., ir em Gestão de T.I. → Acessos, cadastrar uma credencial, clicar em "Mostrar" (a senha aparece) e depois em "Histórico" (deve mostrar quem revelou e quando). Editar deixando a senha em branco deve manter a senha anterior. Logar com RH/Visitante/ADM N2 não deve nem mostrar o módulo no menu.
+- Como reverter: Remover a pasta `/ti/acessos`, a rota `/src/rotas/acessos.js`, o registro em `/api/index.js` e as referências em `/core/permissions.js` e `/src/middlewares/auth.js`.
 
 ### [2026-07-17] Novo módulo: Almoxarifado Feridas (Gestão Saúde)
 - Autor: Claude Code

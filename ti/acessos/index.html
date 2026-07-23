@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acessos - Órbita FATEC</title>
+    <link rel="icon" type="image/png" href="/img/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/core/layout.css">
+    <link rel="stylesheet" href="/ti/acessos/acessos.css">
+</head>
+<body>
+    <div id="auth-guard" class="layout-auth-guard">
+        <div class="layout-spinner"></div>
+        <h3 style="color:var(--text-main); font-weight:600;">Autenticando...</h3>
+    </div>
+
+    <div id="app" class="layout-wrapper hidden">
+        <main class="layout-main">
+            <div class="layout-content acs-content">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Acessos</h1>
+                        <p class="page-subtitle">Cofre de credenciais do setor — sistemas, e-mails e acessos do Órbita</p>
+                    </div>
+                    <div class="page-header-actions">
+                        <button class="btn-primary action-execute" id="btn-novo-acesso">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Novo Acesso
+                        </button>
+                    </div>
+                </div>
+
+                <p class="acs-aviso">🔒 As senhas ficam criptografadas no banco. Cada vez que alguém clica em "Mostrar", isso é registrado (quem e quando).</p>
+
+                <div class="filters-bar">
+                    <div class="search-wrap">
+                        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" id="search-acessos" class="search-input" placeholder="Buscar por sistema, titular ou usuário...">
+                    </div>
+                    <select id="filtro-categoria" class="select-filtro">
+                        <option value="">Todas as categorias</option>
+                        <option value="Sistema">Sistema</option>
+                        <option value="E-mail">E-mail</option>
+                        <option value="Órbita">Órbita</option>
+                        <option value="Servidor">Servidor</option>
+                        <option value="Outro">Outro</option>
+                    </select>
+                </div>
+
+                <div id="acessos-list" class="acs-grid">
+                    <div class="empty-state"><p>Carregando acessos...</p></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Novo/Editar Acesso -->
+    <div id="modal-acesso" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 id="modal-acesso-title">Novo Acesso</h2>
+            <form id="form-acesso">
+                <input type="hidden" id="acs-id">
+                <div class="form-group">
+                    <label>Sistema / Serviço *</label>
+                    <input type="text" id="acs-sistema" placeholder="Ex: Servidor de e-mails, Órbita - Amanda" required>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Categoria</label>
+                        <select id="acs-categoria">
+                            <option value="Sistema">Sistema</option>
+                            <option value="E-mail">E-mail</option>
+                            <option value="Órbita">Órbita</option>
+                            <option value="Servidor">Servidor</option>
+                            <option value="Outro">Outro</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Titular (funcionário)</label>
+                        <input type="text" id="acs-titular" placeholder="Se for pessoal">
+                    </div>
+                </div>
+                <div class="rev-grid2">
+                    <div class="form-group">
+                        <label>Usuário / Login</label>
+                        <input type="text" id="acs-usuario" placeholder="Ex: amanda@fatecivaipora.com.br">
+                    </div>
+                    <div class="form-group">
+                        <label id="lbl-acs-senha">Senha *</label>
+                        <input type="text" id="acs-senha" placeholder="Digite a senha">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Link do sistema (opcional)</label>
+                    <input type="text" id="acs-url" placeholder="https://...">
+                </div>
+                <div class="form-group">
+                    <label>Observações</label>
+                    <textarea id="acs-observacoes" rows="2" placeholder="Notas adicionais"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="btn-cancelar-acesso">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="btn-salvar-acesso">Cadastrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Histórico de visualizações da senha -->
+    <div id="modal-auditoria" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Quem já viu esta senha</h2>
+            <div id="auditoria-lista" class="auditoria-lista"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="btn-fechar-auditoria">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script type="module" src="/ti/acessos/app.js"></script>
+</body>
+</html>

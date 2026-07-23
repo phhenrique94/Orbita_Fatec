@@ -34,6 +34,13 @@ export const MODULES = {
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
     url: "/agenda/index.html"
   },
+  acessos: {
+    id: "acessos",
+    category: "ti",
+    title: "Acessos",
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+    url: "/ti/acessos/index.html"
+  },
   usuarios: {
     id: "usuarios",
     category: "admin",
@@ -116,7 +123,7 @@ export const MODULES = {
 export const ROLE_PERMISSIONS = {
   adm_l1: {
     label: "ADM N1",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas", "almoxarifado-saude", "relatorio-dp"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "ensalamento", "carga-horaria", "funcionarios", "empresas", "turmas", "avaliacoes", "ferida", "almoxarifado-feridas", "almoxarifado-saude", "relatorio-dp", "acessos"]
   },
   adm_l2: {
     label: "ADM N2",
@@ -124,7 +131,7 @@ export const ROLE_PERMISSIONS = {
   },
   ti: {
     label: "T.I.",
-    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios"]
+    modules: ["dashboard", "fidelidade", "emprestimo", "agenda", "usuarios", "acessos"]
   },
   rh: {
     label: "RH",

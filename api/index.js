@@ -61,6 +61,7 @@ const rotasFerida = require('../src/rotas/ferida');
 const rotasAlmoxarifadoFeridas = require('../src/rotas/almoxarifado-feridas');
 const rotasAlmoxarifadoSaude = require('../src/rotas/almoxarifado-saude');
 const rotasSecretariaDp = require('../src/rotas/secretaria-dp');
+const rotasAcessos = require('../src/rotas/acessos');
 
 app.use('/api/emprestimos', rotasEmprestimo);
 app.use('/api/usuarios', rotasUsuarios);
@@ -77,6 +78,7 @@ app.use('/api/ferida', rotasFerida);
 app.use('/api/almoxarifado-feridas', rotasAlmoxarifadoFeridas);
 app.use('/api/almoxarifado-saude', rotasAlmoxarifadoSaude);
 app.use('/api/secretaria-dp', rotasSecretariaDp);
+app.use('/api/acessos', rotasAcessos);
 
 // Exportação obrigatória para o Vercel Serverless
 
