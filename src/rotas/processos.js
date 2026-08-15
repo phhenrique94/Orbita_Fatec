@@ -232,9 +232,26 @@ router.get('/atividades', verifyToken, async (req, res) => {
     } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
+// Lista os colegas do próprio setor — qualquer um pode ver, pra poder
+// atribuir atividade a um colega (não só o chefe atribuindo pra baixo).
+router.get('/colegas', verifyToken, async (req, res) => {
+    try {
+        if (!req.user.setorId) return res.json([]);
+        const snap = await db.collection('users').where('setorId', '==', req.user.setorId).get();
+        const colegas = [];
+        snap.forEach(doc => {
+            const d = doc.data();
+            if (d.ativo === false) return;
+            colegas.push({ uid: doc.id, name: d.name, email: d.email });
+        });
+        colegas.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        res.json(colegas);
+    } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
 // Cria uma tarefa avulsa. Sem `uid` no body: cria pra si mesmo. Com `uid`
-// de outra pessoa: só gestor pode, e só dentro do próprio setor (chefe) —
-// admin também precisa ser gestor do setor de quem vai receber a tarefa.
+// de outra pessoa: qualquer um pode, contanto que seja colega do mesmo
+// setor — admin pode atribuir pra qualquer setor.
 router.post('/atividades', verifyToken, async (req, res) => {
     try {
         const { titulo, descricao, prazo } = req.body;
@@ -245,14 +262,13 @@ router.post('/atividades', verifyToken, async (req, res) => {
         let setorIdAlvo = req.user.setorId || null;
 
         if (req.body.uid && req.body.uid !== req.user.uid) {
-            if (!GESTOR_ROLES.includes(req.user.role)) {
-                return res.status(403).json({ error: 'Apenas Chefe de Setor ou Administrador podem criar atividade para outra pessoa.' });
-            }
             const alvoSnap = await db.collection('users').doc(req.body.uid).get();
             if (!alvoSnap.exists) return res.status(404).json({ error: 'Funcionário não encontrado.' });
             const alvo = alvoSnap.data();
-            if (req.user.role === 'chefe_setor' && alvo.setorId !== req.user.setorId) {
-                return res.status(403).json({ error: 'Você só pode atribuir atividades a funcionários do seu setor.' });
+
+            const souAdmin = req.user.role === 'adm_l1' || req.user.role === 'adm_l2';
+            if (!souAdmin && (!req.user.setorId || alvo.setorId !== req.user.setorId)) {
+                return res.status(403).json({ error: 'Você só pode atribuir atividades a colegas do seu setor.' });
             }
             uidAlvo = req.body.uid;
             setorIdAlvo = alvo.setorId || null;

@@ -112,6 +112,10 @@ async function initApp(user, role) {
     if (linkProcessos) linkProcessos.classList.remove('hidden');
     document.getElementById('gestor-panel').classList.remove('hidden');
     await setupSetorScope(role);
+  } else {
+    // Não é gestor, mas pode atribuir atividade a colega do mesmo setor —
+    // só precisa da lista de nomes pro seletor "Para" do modal.
+    try { funcionariosDoSetor = await apiFetch('/processos/colegas'); } catch (e) { funcionariosDoSetor = []; }
   }
 
   document.getElementById('board-select').addEventListener('change', (e) => {
@@ -559,7 +563,7 @@ function abrirModalAtividade({ diaPreset = null, editar = null } = {}) {
 
   const wrap = document.getElementById('atividade-para-wrap');
   const select = document.getElementById('atividade-uid');
-  if (!editar && souGestor && funcionariosDoSetor.length) {
+  if (!editar && funcionariosDoSetor.length) {
     wrap.classList.remove('hidden');
     const boardSelect = document.getElementById('board-select');
     const selecionadoAtual = boardSelect ? boardSelect.value : '__self__';
@@ -590,7 +594,7 @@ async function salvarAtividade(e) {
     descricao,
     prazo: new Date(prazoInput).toISOString()
   };
-  if (!editandoId && souGestor && uidSelect && !document.getElementById('atividade-para-wrap').classList.contains('hidden')) {
+  if (!editandoId && uidSelect && !document.getElementById('atividade-para-wrap').classList.contains('hidden')) {
     data.uid = uidSelect.value;
   }
 
@@ -603,7 +607,7 @@ async function salvarAtividade(e) {
       }
     });
     fecharModal('modal-atividade');
-    if (data.uid && data.uid !== currentUser.uid) {
+    if (souGestor && data.uid && data.uid !== currentUser.uid) {
       await carregarPainelSetor();
       const boardSelect = document.getElementById('board-select');
       if (boardSelect) {
