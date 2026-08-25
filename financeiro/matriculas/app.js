@@ -513,14 +513,16 @@ function setupModalAluno() {
     try {
       const cursoSel = document.getElementById('aluno-curso');
       const cursoNome = cursoSel?.selectedOptions?.[0]?.textContent || cursoSelecionadoNome;
+      // Nome/cidade/observações seguem em maiúsculo (mesmo padrão da planilha
+      // original e do resto do Órbita) independente de como a pessoa digitou.
       const payload = {
-        nome: document.getElementById('aluno-nome').value,
+        nome: document.getElementById('aluno-nome').value.toUpperCase(),
         periodo: document.getElementById('aluno-periodo').value,
-        cidade: document.getElementById('aluno-cidade').value,
+        cidade: document.getElementById('aluno-cidade').value.toUpperCase(),
         telefone: document.getElementById('aluno-telefone').value,
         situacao: document.getElementById('aluno-situacao').value,
         planoConfissao: document.getElementById('aluno-plano').value,
-        observacoes: document.getElementById('aluno-observacoes').value
+        observacoes: document.getElementById('aluno-observacoes').value.toUpperCase()
       };
       if (moduloSelecionado === 'fatec') {
         payload.cursoId = cursoSel.value;

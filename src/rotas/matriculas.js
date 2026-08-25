@@ -157,12 +157,12 @@ router.post('/alunos', verifyToken, checkPermission, async (req, res) => {
             cursoId: modulo === 'fatec' ? cursoId : null,
             curso: modulo === 'fatec' ? curso : 'Medicina',
             periodo: (periodo || '').trim(),
-            nome: nome.trim(),
-            cidade: (cidade || '').trim(),
+            nome: nome.trim().toUpperCase(),
+            cidade: (cidade || '').trim().toUpperCase(),
             telefone: (telefone || '').trim(),
             situacao,
             planoConfissao: planoConfissao || 'Não',
-            observacoes: (observacoes || '').trim(),
+            observacoes: (observacoes || '').trim().toUpperCase(),
             semestre,
             createdAt: new Date().toISOString(),
             createdBy: req.user.uid,
@@ -182,7 +182,7 @@ router.put('/alunos/:id', verifyToken, checkPermission, async (req, res) => {
 
         if (nome !== undefined) {
             if (!nome.trim()) return res.status(400).json({ error: 'Informe o nome do aluno.' });
-            dados.nome = nome.trim();
+            dados.nome = nome.trim().toUpperCase();
         }
         if (situacao !== undefined) {
             if (!SITUACOES.includes(situacao)) return res.status(400).json({ error: 'Situação inválida.' });
@@ -195,9 +195,9 @@ router.put('/alunos/:id', verifyToken, checkPermission, async (req, res) => {
             dados.planoConfissao = planoConfissao || 'Não';
         }
         if (periodo !== undefined) dados.periodo = (periodo || '').trim();
-        if (cidade !== undefined) dados.cidade = (cidade || '').trim();
+        if (cidade !== undefined) dados.cidade = (cidade || '').trim().toUpperCase();
         if (telefone !== undefined) dados.telefone = (telefone || '').trim();
-        if (observacoes !== undefined) dados.observacoes = (observacoes || '').trim();
+        if (observacoes !== undefined) dados.observacoes = (observacoes || '').trim().toUpperCase();
         if (cursoId !== undefined && curso !== undefined) {
             dados.cursoId = cursoId;
             dados.curso = curso;
