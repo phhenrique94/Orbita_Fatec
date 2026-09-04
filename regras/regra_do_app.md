@@ -111,6 +111,19 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 
 ## 8. Histórico de alterações
 
+### [2026-09-04] Secretaria Acadêmica: "Relatório DP" some do menu do cargo `sec` (bug) + novos logins
+- Autor: Claude Code
+- Branch: main
+- Arquivos alterados:
+  - `/core/permissions.js` — `sec.modules` estava sem `"relatorio-dp"`, mesmo o cargo já tendo nível 3 pra esse módulo configurado no documento `config/permissions` do Firestore (usado pela tela "Gerência de Acessos") — o link "Relatório DP" nunca aparecia no menu de ninguém com cargo Secretaria, mesmo quem já tinha acesso liberado. Mesma classe de bug já corrigida antes pro cargo `financeiro` (matrículas/cobrança em 2026-09-04) — aqui a causa é a lista estática do menu, não o documento de permissões (que já estava certo).
+- Tipo: Correção de bug (menu escondendo módulo já liberado)
+- Motivo: Pedido do usuário — Ediane, Brenda, Hemilly (já tinham login), Dyenyffer e Maria Eduarda (logins novos) precisavam ver Relatório de Matrículas e Relatório DP.
+- Impacto/riscos a observar:
+  - **Não fica registrado em código quem tem qual acesso individual** — os dois usuários novos (Dyenyffer, Maria Eduarda) e o ajuste de nível "leitor" (Hemilly, Dyenyffer) foram feitos direto no Firestore (`users/{uid}` e `users/{uid}.permissoes`), não há arquivo/commit que documente isso — só esta entrada do changelog.
+  - **E-mails fictícios**: a pedido do usuário, Dyenyffer e Maria Eduarda foram cadastradas com e-mail fictício `@orbita.com.br` (não é domínio institucional real) e senha temporária `primeironome@26` — force login e troca de senha no 1º acesso já é o padrão do sistema (`primeiroAcesso: true`).
+- Como testar: logar como Ediane/Brenda (cargo `sec`, sem override) e conferir que "Relatório DP" aparece no menu; logar como Hemilly/Dyenyffer e confirmar que Matrículas abre em modo leitura (sem botão de cadastrar/editar) mas Relatório DP abre completo.
+- Como reverter: `git revert` deste commit volta a esconder "Relatório DP" do menu de todo o cargo Secretaria (não só dessas 5 pessoas) — os logins/permissões criados no Firestore não são desfeitos pelo revert (teria que desativar as contas manualmente se for o caso).
+
 ### [2026-09-04] Orçamento: cada colaboradora vê só o próprio, Chefe de Setor (Lisa) vê de todo mundo
 - Autor: Claude Code
 - Branch: main
