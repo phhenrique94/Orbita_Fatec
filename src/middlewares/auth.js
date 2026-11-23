@@ -69,7 +69,11 @@ const verifyToken = async (req, res, next) => {
     // 1. Validação do token JWT — falha aqui é realmente "token inválido/expirado"
     let decodedToken;
     try {
-        decodedToken = await auth.verifyIdToken(idToken);
+        // checkRevoked=true: sem isso, um token já emitido continua passando
+        // mesmo depois que a conta é desativada/excluída ou a senha trocada
+        // à força, porque a verificação local só confere assinatura e prazo
+        // (achado do relatório de segurança de 17/11).
+        decodedToken = await auth.verifyIdToken(idToken, true);
     } catch (error) {
         console.error('Erro ao verificar o token:', error);
         return res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -83,6 +87,9 @@ const verifyToken = async (req, res, next) => {
         const cached = userRoleCache.get(req.user.uid);
         const now = Date.now();
         if (cached && (now - cached.lastFetched) < USER_CACHE_TTL) {
+            if (cached.semCadastro || cached.ativo === false) {
+                return res.status(403).json({ error: 'Conta sem acesso ao sistema.' });
+            }
             req.user.role = cached.role;
             req.user.permissoes = cached.permissoes;
             req.user.setorId = cached.setorId;
@@ -94,7 +101,20 @@ const verifyToken = async (req, res, next) => {
         } else {
             const { db } = require('../firebase');
             const userDoc = await db.collection('users').doc(req.user.uid).get();
-            const userData = userDoc.exists ? userDoc.data() : {};
+            // Sem documento cadastrado (ex.: conta criada só pelo autocadastro
+            // do Firebase, ou excluída) virava "visitante" silenciosamente —
+            // agora é barrado. Conta marcada como inativa também é barrada
+            // aqui, e não só escondida no menu (achado do relatório de
+            // segurança de 17/11).
+            if (!userDoc.exists) {
+                userRoleCache.set(req.user.uid, { semCadastro: true, lastFetched: now });
+                return res.status(403).json({ error: 'Conta sem cadastro no sistema. Acesso negado.' });
+            }
+            const userData = userDoc.data();
+            if (userData.ativo === false) {
+                userRoleCache.set(req.user.uid, { ativo: false, lastFetched: now });
+                return res.status(403).json({ error: 'Conta desativada.' });
+            }
             req.user.role = userData.role || 'visitante';
             // Permissões específicas do usuário (override por módulo) — sempre
             // vencem as do cargo quando definidas
@@ -123,6 +143,7 @@ const verifyToken = async (req, res, next) => {
                 req.user.primeiroAcesso = false;
             }
             userRoleCache.set(req.user.uid, {
+                ativo: true,
                 role: req.user.role,
                 permissoes: req.user.permissoes,
                 setorId: req.user.setorId,
@@ -240,6 +261,7 @@ const requireModulePermission = (moduleName) => {
                 'banco-med-fatec': 3,
                 'relatorio-desempenho': 3,
                 'aplicacao-provas-med': 3,
+                'portfolio-med': 3,
                 'banco-provas': 3,
                 'confirmacao-evento': 3,
                 contratos: 3,
@@ -424,6 +446,7 @@ const requireModulePermission = (moduleName) => {
                 'banco-med-fatec': 3,
                 'relatorio-desempenho': 3,
                 'aplicacao-provas-med': 3,
+                'portfolio-med': 3, // Portfólio SCIC (23/11/2026): configura as turmas e vê todas
                 'banco-provas': 1,
                 'confirmacao-evento': 1,
                 contratos: 1,
@@ -449,6 +472,7 @@ const requireModulePermission = (moduleName) => {
                 cobranca: 1,
                 'banco-med-fatec': 3,
                 'relatorio-desempenho': 1,
+                'portfolio-med': 3, // Portfólio SCIC (23/11/2026): corrige só as turmas em que é corretor (rota filtra)
                 'aplicacao-provas-med': 1, // 16/11/2026: no menu Medicina o professor vê só o Banco (as datas das provas aparecem lá dentro)
                 'banco-provas': 1,
                 'confirmacao-evento': 1,

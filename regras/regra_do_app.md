@@ -99,6 +99,99 @@ O sistema segue uma identidade visual institucional "Light Theme" moderna:
 ## 7. Regras de alteração
 Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo o modelo abaixo:
 
+### [2026-11-23] Medicina: módulo Portfólio Reflexivo (correção dos portfólios da SCIC com a mesma matriz)
+- Autor: Claude Code (pedido do Suporte AVA)
+- Branch: feat/portfolio-med
+- Arquivos alterados: `medicina/portfolio/{index.html, app.js, portfolio.css, matriz.js}` (novos), `src/rotas/portfolio-med.js` (novo), `src/utils/portfolio-med-padrao.js` (novo), `src/utils/portfolio-similaridade.js` (novo), `api/index.js`, `core/permissions.js`, `src/middlewares/auth.js`.
+- Tipo: Módulo novo
+- Motivo: o pedido foi "o professor precisa pegar cada uma das turmas para correção usando esse critério; os alunos entregam pelo AVA nas tarefas; facilitar a correção e ter os mesmos critérios para cada professor". O critério vem dos documentos da coordenação "Prompt_Correcao_Portfolio_{2,4,5}o_Periodo.docx": a matriz (4 critérios, 4 níveis, soma até 10) é igual nos três; muda só o bloco da turma.
+- Impacto:
+  - **Matriz única** em `medicina/portfolio/matriz.js` (UMD: o servidor faz `require` e a tela carrega com `<script>`). Descritores literais dos documentos. A nota é **calculada**, nunca digitada: C1 e C4 → o professor escolhe o nível; C2 → o professor marca os 3 elementos (análise consistente/superficial/ausente, necessidades, ações) e o nível sai deles (combinação não prevista na matriz → o professor escolhe, com aviso); C3 → o professor marca os objetivos da turma atingidos e o nível sai da proporção (≥90% Ótimo, ≥75% Bom, 50–75% Bom "por aproximação" com o texto do documento, ≤50% Deve melhorar, 0 Insuficiente); total = soma estrita. Atraso (50%) e plágio (zerar ou nova versão a 50%) só se o professor marcar. Para finalizar é obrigatório ter nível e evidência/justificativa nos 4 critérios e os 3 campos de feedback (rascunho pode ficar incompleto). A versão da matriz fica gravada na correção (`matrizVersao`).
+  - **Turmas** (`med_portfolio_turmas/{semestre}__{turma}`): objetivos (Critério 3), questão norteadora, instruções e **professores corretores**. 2026.2 já vem com T3/2º, T2/4º e T1/5º dos documentos (`portfolio-med-padrao.js`) até a coordenação salvar. Semestre novo: "Copiar turmas de outro semestre".
+  - **Entrega pelo AVA, sem integração direta (MVP)**: o professor cria a atividade ("Portfólio 1") e sobe o ZIP de "Baixar todas as tarefas enviadas" da Tarefa. O ZIP e os PDFs são abertos **no navegador** (JSZip + pdf.js do jsDelivr); ao servidor vai só o texto extraído (`med_portfolio_textos`, separado de `med_portfolio_entregas` para a lista não carregar o texto). O aluno é identificado pelo número de participante do AVA (`Nome_123456_assignsubmission_file_`). O PDF fica visível só na sessão do navegador (recarregou → importar o ZIP de novo; as correções não se perdem). Reimportar atualiza o texto e avisa se o aluno mudou o arquivo depois da correção finalizada.
+  - **Similaridade** (`portfolio-similaridade.js`, sem IA): sequências de 8 palavras iguais entre cada par da atividade; ignora referências e trechos presentes em 25% ou mais dos portfólios (mínimo 3: objetivos copiados do plano, capa, termos do SUS); gravidade indicativa Baixa/Média/Alta; a decisão é do professor.
+  - **Saída**: quadro-resumo (C1–C4, nota, alerta de similaridade), Excel, relatório da turma para imprimir (quadro + similaridade + avaliações individuais com evidência, no formato do documento) e **preenchimento da planilha de avaliação offline da Tarefa do AVA** (o professor baixa o .csv no AVA, o Órbita devolve com nota e feedback das finalizadas, e o professor envia de volta no AVA). Só as finalizadas vão.
+  - Acesso: ADM N1/N2, `coord_medicina` e a responsável pelas avaliações (`avaliacoesMed`) configuram e veem todas as turmas; `professor_medicina` (ou `professorMedicina`) só as turmas em que está como corretor (a rota filtra). Níveis padrão `portfolio-med`: 3 para adm_l2, coord_medicina e professor_medicina. **Precisa dar o nível no `config/permissions` (Usuários → Gerência de Acessos), senão não aparece no menu.**
+  - LGPD: o texto do portfólio (pode citar paciente) fica só no Firestore institucional; nada vai para serviço externo nesta versão. A integração direta com a API do AVA (token do web service no `.env`) e a sugestão por IA ficaram para depois.
+- Como testar (feito em 23/11/2026, servidor local ligado ao Firestore de produção): Medicina → Portfólio Reflexivo → 2026.2 mostra as 3 turmas dos documentos. Atividade "TESTE — apagar" na T3 + ZIP no formato do AVA com 3 alunos fictícios (um parágrafo copiado entre dois): importou 3/3, PDF aparece ao lado da matriz, similaridade apontou só o par com o parágrafo copiado (a capa igual nos 3 foi ignorada); correção com 7/10 objetivos → Bom com a nota da faixa 50–75%, finalizar sem feedback foi bloqueado, com atraso deu 8,0 × 0,5 = 4,0; planilha de avaliação simulada voltou com "4,00" e o feedback na coluna de comentários. Atividade de teste excluída depois (coleções `med_portfolio_*` vazias). Não testado com login de professor nem com um ZIP real do AVA.
+
+### [2026-11-23] Matrículas › Diferenças com o Edubox: status da rematrícula é aplicado sozinho
+- Autor: Claude Code (pedido do Suporte AVA)
+- Branch: fix/edubox-rematricula-automatica
+- Arquivos alterados: `src/utils/matriculas-edubox.js` (`aplicaSozinha()`, `REMATRICULA`, laço de aplicação automática do `sincronizar()`).
+- Tipo: Ajuste de regra
+- Motivo: a aba "Esperando confirmação" enchia de "Situação no Órbita "Rematrícula Assinada" → pelo Edubox "Não Assinou"". O usuário: "esses que são rematrículas é só marcar sozinho, não tem nada a conferir, é só o status; mudança de curso e outras pendências deixa pra Lisa decidir".
+- Impacto:
+  - Pendência de situação em que o antes e o depois são "Rematrícula Assinada" ou "Não Assinou" (nos dois sentidos) é aplicada na sincronização, igual à matrícula nova de calouro (desde 12/11). Fica em "Resolvidas" por "Edubox (automático)" e atualiza o contrato do Comercial.
+  - Vale também para as que já tinham sido IGNORADAS (pedido do usuário, "Aplicar também"): voltam para pendente (`reabertaEm`, `ignoradaAntesPor`) e são aplicadas. Em 23/11/2026 eram 153 na Graduação 2027.1 (151 ignoradas pela Lisa, a maioria em 16/11) e 18 na Medicina 2027.1 (14 pendentes + 4 novas).
+  - Continuam esperando a Lisa: mudança de curso, saída (Cancelou, Trancou…), período, formando, "conferir", criar matrícula que não é de calouro, duplicadas.
+- Como testar: abrir Matrículas › 2027.1 e sincronizar com o Edubox; a aba "Esperando confirmação" não tem mais "Rematrícula Assinada ↔ Não Assinou", e elas aparecem em "Resolvidas" por "Edubox (automático)".
+- Como reverter: em `aplicaSozinha()` tirar a linha da `REMATRICULA` (as já aplicadas ficam aplicadas; voltar o status à mão no cadastro, se for o caso).
+
+### [2026-11-23] Segurança: correção do fix anterior do Vercel — regras/*.md continuava 200
+- Autor: Claude Code (a pedido do usuário, corrigindo a entrada anterior "Vercel para de servir regras/, scripts/ e arquivos de configuração")
+- Branch: fix/vercel-routes-404-de-verdade
+- Arquivos alterados: `vercel.json` (trocado `rewrites` por `routes`).
+- Tipo: Correção de segurança
+- Motivo: testado ao vivo depois do deploy anterior — `/scripts/*` ficou 404 (o arquivo tinha sido apagado do repositório), mas `/regras/regra_do_app.md` continuou 200. Causa: `rewrites` no Vercel só entra em ação quando o caminho pedido **não bate com um arquivo real** no build; como `regras/regra_do_app.md` existe de verdade, o Vercel servia ele direto, sem nunca checar a regra.
+- Impacto: trocado para `routes` (array ordenado, cada entrada checada antes do sistema de arquivos) com `{"status": 404}` explícito para `/regras/*`, `/scripts/*`, qualquer `*.md` (em qualquer pasta, não só na raiz), `package.json`, `package-lock.json`, `firestore.rules`, `firestore.indexes.json`, `firebase.json`; a rota da API continua igual; `{"handle": "filesystem"}` no final preserva o comportamento normal pra tudo mais (os 100+ módulos do site). Testado ao vivo depois do deploy: `/regras/regra_do_app.md` → 404, `/scripts/*` → 404, `/` e um módulo qualquer → 200 normal, `/api/usuarios/me` → resposta normal da API (não 404).
+- Como testar: depois do deploy, `curl -o /dev/null -w "%{http_code}" https://orbita-fatec-ti.vercel.app/regras/regra_do_app.md` → 404; a home e os módulos continuam abrindo normal.
+- Como reverter: reverter o commit (volta pro `rewrites` anterior, que tinha a falha descrita acima).
+
+### [2026-11-23] Segurança: dependências com CVE atualizadas (npm audit fix)
+- Autor: Claude Code (a pedido do usuário, item 14 do relatório de revisão de segurança de 17/11/2026, revisitado após o GitHub reportar 11 alertas do Dependabot no push do item 4)
+- Branch: fix/dependencias-cve
+- Arquivos alterados: `package-lock.json` (só o lockfile — `package.json` não mudou, as versões já cabiam nos intervalos semver existentes).
+- Tipo: Correção de segurança (dependências)
+- Motivo: `npm audit` apontava 15 vulnerabilidades, incluindo uma crítica (`proxy-addr`, spoofing de IP via IPv6 mapeado) e várias altas (`body-parser`, `compression`, `@fastify/busboy` — DoS).
+- Impacto: `npm audit fix` resolveu 13 das 15 (via `express@5.2.1` que já permitia `body-parser@2.4.0`/`proxy-addr@2.0.8`/`qs@6.17.1` mais novos; `compression@1.8.2`; `@fastify/busboy@3.2.6` e `fast-xml-parser@5.12.1` por baixo do `firebase-admin`). Testado: `express`/`compression` montam sem erro e `firebase-admin` inicializa normalmente (só não completou por faltar `serviceAccountKey.json` no worktree de teste, esperado). Ficaram **2 pendentes, de propósito**:
+  - **`uuid`** (moderado): só corrige subindo `firebase-admin` pra `14.5.1` (major, mudança de risco maior — não entrou aqui, fica pra uma tarefa própria com mais teste).
+  - **`xlsx`** (alto, Prototype Pollution + ReDoS): **sem correção disponível no npm** — o mantenedor (SheetJS) só publica a versão corrigida no próprio CDN (`cdn.sheetjs.com`), não no registro do npm. Decisão pendente: trocar por `exceljs` (mais trabalho) ou instalar a versão corrigida pelo CDN deles. Usado em: scripts de licitação/compras e na planilha mestra de alunos — risco real é abrir um `.xlsx` malicioso de fonte não confiável.
+- Como testar: `npm audit` deve mostrar só 8 vulnerabilidades (`uuid` + `xlsx`, contadas várias vezes pela árvore de dependência).
+- Como reverter: reverter o commit e rodar `npm install` de novo.
+
+### [2026-11-23] Segurança: Vercel para de servir regras/, scripts/ e arquivos de configuração
+- Autor: Claude Code (apontado por um colaborador externo, confirmando o achado 15 do relatório de segurança de 17/11)
+- Branch: fix/vercel-bloquear-docs-e-scripts
+- Arquivos alterados: `vercel.json` (rewrites novos pra "/404").
+- Tipo: Correção de segurança
+- Motivo: mesmo com o GitHub privado, o Vercel continuava servindo a raiz do repositório como site — confirmado ao vivo: `orbita-fatec-ti.vercel.app/regras/regra_do_app.md` e `.../scripts/criar-contas-professores-med.js` (nomes reais dos 15 professores de Medicina + a fórmula da senha previsível) respondiam 200, acessíveis por qualquer um que soubesse/adivinhasse o caminho.
+- Impacto: `/regras/*`, `/scripts/*`, qualquer `*.md` (README, AGENTS.md, DESIGN.md, PRODUCT.md, CLAUDE.md...), `package.json`, `package-lock.json`, `firestore.rules`, `firestore.indexes.json` e `firebase.json` agora respondem 404 no site. Nada do front-end do Órbita referencia esses caminhos no navegador (conferido antes de aplicar), então não quebra nenhum módulo. `src/` e `api/` continuam servidos (necessário pra função serverless da API funcionar) — isso é uma exposição menor e separada, já que o navegador nunca fala com o Firestore direto e as rotas exigem token.
+- Como testar: depois do deploy, `curl -o /dev/null -w "%{http_code}" https://orbita-fatec-ti.vercel.app/regras/regra_do_app.md` deve dar 404 (hoje dá 200); o site e a API continuam funcionando normal.
+- Como reverter: reverter o commit.
+- **Atenção**: esse fix só entra no ar quando o próximo deploy do Vercel funcionar — hoje os deploys estão falhando ("Cannot deploy from a private GitHub organization repository on the Hobby plan", acompanhar separadamente).
+
+### [2026-11-23] Segurança: repositório tornado privado + trava contra segredo hardcoded no código
+- Autor: Claude Code (a pedido do usuário, seguindo os itens 1 a 4 "Hoje" do relatório de revisão de segurança do repositório público de 17/11/2026)
+- Branch: chore/trava-segredos-e-changelog (itens 1-4 feitos direto em produção/console, fora do git — ver abaixo)
+- Arquivos alterados: `AGENTS.md` (nova seção "Nunca hardcode segredo ou chave externa no código"), `.githooks/pre-commit` e `.githooks/checar-segredos.js` (novos), `regras/regra_do_app.md`.
+- Tipo: Segurança / Governança
+- Motivo: fechar os 4 itens urgentes do relatório de segurança (repositório público do GitHub expunha padrão de senha previsível, planilha antiga da Secretaria, mapa do servidor) e impedir que o mesmo tipo de vazamento (segredo/chave externa hardcoded no código) se repita no futuro.
+- Impacto (o que foi feito fora do git, direto no GitHub/Firebase/DigitalOcean):
+  1. **Senhas previsíveis**: as 15 contas de professores de Medicina criadas em 16/11 — 7 já tinham trocado a senha sozinhas; as outras 8 (Fredericka, Maria Rita, Bruna, Amanda Cruz, Polyana, Sarah, Fabio Leão, Annika) tiveram senha individual aleatória gerada (PDF entregue à coordenação, `primeiroAcesso` continua true). Contas `dyenyffer@orbita.com.br` e as 2 de demonstração (`demo.titular`/`demo.adjunto@orbitamedfatec.com.br`) excluídas (Auth + Firestore) por estarem abandonadas; `mariaeduarda@orbita.com.br` mantida por estar em uso ativo. Também excluídas 2 contas órfãs do Auth sem documento no Firestore (`teste@tes2.com`, `cordenador@teste.com`), achadas numa varredura comparando Auth × `users/`.
+  2. **Apps Script da planilha de DP** (`scripts/migrar-secretaria-dp.js`): sem execuções no período máximo retido pelo Google — implantação antiga arquivada (`Implantar → Gerenciar implantações`).
+  3. **Autocadastro do Firebase** ("Enable create (sign-up)"): estava ligado, desligado agora. Proteção contra enumeração de e-mail já estava ligada.
+  4. **GitHub `Fatec-Ivaipora/Orbita_Fatec` tornado privado.** Antes disso: `phhenrique94` (contribuía só por fork pessoal) virou colaborador oficial com permissão **Write**; o relay (`/opt/orbita-sync`, usuário `orbita`) passou a autenticar via **fine-grained personal access token** (permissão só de leitura de conteúdo, restrito a este repositório) guardado em `/opt/orbita-sync/.git-credentials` (chmod 600) — deploy key SSH não foi possível porque a organização tem "Deploy keys" desativado globalmente. Na primeira tentativa de tornar privado, o GitHub desabilitou o repositório inteiro (`"Repository is disabled"`): a organização tinha um plano antigo com só 1 "seat" de repositório privado, já ocupado pelo repositório piloto `GED-Fatec` (abandonado, 2 commits, nunca usado) — revertido pra público, `GED-Fatec` excluído definitivamente, e só então o Orbita_Fatec virou privado com sucesso (confirmado com `git pull` funcionando no relay e `orbita-fatec-ti.vercel.app` respondendo normal). GitHub Secret Scanning / Push Protection nativos **não puderam ser ligados** (exigem GitHub Advanced Security, pago) — daí o hook abaixo.
+- Trava nova (impacto no código, este sim versionado): `.githooks/pre-commit` varre o diff de cada commit (`git diff --cached -U0`) procurando padrão de segredo — token de GitHub, deploy ID do Google Apps Script, URL com `token=`/`key=`/`secret=` na query string, chave privada, string de conexão de banco com senha embutida. Se achar, recusa o commit. **Precisa ativar uma vez por clone**: `git config core.hooksPath .githooks`. Não cobre tudo (é varredura por padrão, não substitui revisão humana) e não bloqueia quem usar `git commit --no-verify`.
+- Como testar: criar um arquivo com uma URL fake contendo "token=" seguido de uma string longa na query string, dar `git add` e `git commit` — deve ser recusado pelo hook (com `core.hooksPath` configurado); a chave pública do Firebase em `core/firebase-config.js` não deve disparar o hook (é "pública por desenho", não é segredo).
+- Como reverter: reverter o commit (hook some, `.githooks` continua no histórico mas não é mais usado); tornar o repositório público de novo é feito pelo GitHub (Settings → General → Danger Zone), não tem nada no git pra reverter dessa parte.
+
+### [2026-11-23] Docência — novo módulo Calendário Acadêmico (Direção) + Agenda Interna + site
+- Autor: Claude Code (a pedido do usuário)
+- Branch: feat/calendario-academico
+- Arquivos alterados: docencia/calendario-academico/{index.html, app.js, calendario.css} (novos), calendario/index.html (página pública, nova), src/rotas/calendario-academico.js (nova), src/utils/calendarioAcademico.js (novo), scripts/calendario-academico-importar.js (novo), api/index.js, core/permissions.js, src/rotas/agenda-espacos.js, secretaria/agenda-espacos/{app.js, agenda-espacos.css, index.html}, regras/regra_do_app.md
+- Tipo: nova funcionalidade
+- Motivo: o diretor acadêmico quer montar o calendário acadêmico no Órbita (e não só no Edubox), refletir na Agenda Interna e mostrar no site novo. Como os eventos se repetem a cada semestre, o semestre novo nasce como cópia de um anterior.
+- Impacto:
+  - Módulo "Calendário Acadêmico" (Docência) SÓ para Roni (diretor), Thalia (ajudante), Paulo Henrique e Administrador (somenteUsuarios + USUARIOS_PERMITIDOS na rota; nem outros ADM N1 veem).
+  - Calendários Graduação e Medicina. "Copiar de outro semestre": desloca em semanas inteiras (mesmo dia da semana), recalcula feriados (fixos pela data; Carnaval/Paixão/Corpus Christi pela Páscoa) e atualiza anos/semestres citados no texto; tudo entra "a conferir". Avisos: domingo, sábado, começa/termina em feriado, fora do semestre.
+  - Publicar → Agenda Interna mostra os eventos (dia inteiro, lidos na hora: editou lá, muda aqui) e o site recebe GET /api/publico/calendario-academico (sem login, qualquer origem, cache 5 min; reuniões internas não vão por padrão) e a página /calendario/ (cores/fonte do site novo, para iframe).
+  - Coleções: calendario_academico_semestres e calendario_academico_eventos. Carga do Edubox (tca_calendario/tca_evento) por script local: 2026.1 e 2026.2 carregados como modelo; 2027.1 (graduação 67, Medicina 48) criado como rascunho a partir de 2026.1 (início letivo 01/02/2027).
+  - Aba "Dias letivos" (mesma conta da planilha "DIAS LETIVOS - CALENDÁRIO 2025"): segunda a sábado entre o primeiro e o último dia letivo (automático: Início das aulas → Término do 2º bimestre; editável), sem feriados e recessos; meses × SEG..SÁB, subtotal por semestre, total do ano, meta 120/semestre (editável). Validado com 2025: 10 de 11 meses iguais à planilha (out/2025: a planilha contou o 13/10 "Dia do Professor – recesso").
+  - 2027.2 (graduação 71, Medicina 43) criado como rascunho a partir de 2026.2 (início letivo 19/07/2027).
+- Como testar: entrar como Roni/Thalia → Docência → Calendário Acadêmico → 2027.1 → conferir/editar → Publicar → ver na Agenda Interna (fev/2027) e em /calendario/?semestre=2027.1.
+- Como reverter: reverter os arquivos acima (as coleções novas podem ficar; nada mais as lê).
+
 ### [AAAA-MM-DD] Título da alteração
 - Autor:
 - Branch:
@@ -108,6 +201,17 @@ Sempre que um arquivo for criado, alterado ou removido, registrar aqui seguindo 
 - Impacto:
 - Como testar:
 - Como reverter:
+
+### [2026-11-18] Segurança: correções dos achados ALTO/MÉDIO do relatório de revisão do repositório público
+- Autor: Claude Code (a pedido do usuário, em cima de um relatório de segurança feito por um colega externo sobre o GitHub público `Fatec-Ivaipora/Orbita_Fatec`)
+- Branch: fix/seguranca-relatorio-17nov
+- Arquivos alterados: `auth/login.js`, `src/middlewares/auth.js`, `src/rotas/usuarios.js`, `core/security.js`; removido `scripts/criar-contas-professores-med.js`.
+- Tipo: Correção de segurança
+- Motivo: Revisão externa apontou risco ALTO: `?redirect=` do login aceitava `javascript:`/outro domínio (open redirect/XSS); conta sem cadastro ou desativada/excluída continuava entrando (virava "visitante" ou seguia com token válido); quem tem nível 3 em Usuários conseguia se promover a ADM N1; a função central de escape não tratava aspas; e o script que criou as 15 contas de Medicina em 16/11 deixava no repositório os nomes reais e a fórmula da senha inicial (primeiro nome + sufixo igual pra todos).
+- Impacto: `auth/login.js` só aceita redirecionamento para caminho relativo da própria origem. `verifyIdToken` agora roda com `checkRevoked=true`; conta sem documento no Firestore ou com `ativo: false` é barrada com 403 em vez de virar "visitante". Em `usuarios.js`: só ADM N1 cria, promove, altera ou exclui uma conta ADM N1; ninguém troca o próprio cargo; troca de cargo grava quem mudou e quando; desativar ou excluir um usuário agora desliga a conta de verdade no Firebase Auth (`disabled`/`deleteUser`) e revoga tokens (`revokeRefreshTokens`); `PUT /me/senha` fora do primeiro acesso exige login feito nos últimos 10 min (mesmo padrão do `auth_time` já usado no Plano de Ação). `escapeHTML` (`core/security.js`) passa a escapar `"` e `'`, não só `& < >` — ainda há cópias locais dessa função em ~10 módulos que não foram tocadas nesta rodada. Removido o script dos professores de Medicina (seu trabalho já tinha sido feito em 16/11).
+- Pendente, já resolvido depois (ver entradas de 23/11/2026 "repositório tornado privado" e "Vercel para de servir regras/, scripts/..."): senhas das 15 contas de Medicina + 2 Secretaria + 2 demo, Apps Script arquivado, autocadastro desligado, repositório privado.
+- Como testar: tentar `?redirect=javascript:alert(1)` no login (deve cair no Meu Espaço); um ADM N2 tentar criar/promover usuário para `adm_l1` pela API (403); desativar um usuário e ele tentar continuar usando o token antigo (403); trocar senha pela tela fora do primeiro acesso depois de guardar o token por mais de 10 min (401 pedindo novo login); cadastrar um nome com aspas e ver que não quebra mais o HTML onde usa `escapeHTML`.
+- Como reverter: reverter o commit.
 
 ### [2026-11-23] Módulo novo: Levantamento EaD (Docência) — disciplinas EAD do semestre editadas pelo EAD, na mesma lista da Aulas EAD
 - Autor: Claude Code (pedido do Suporte AVA)

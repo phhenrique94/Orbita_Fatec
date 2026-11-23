@@ -1,9 +1,11 @@
 {
   "version": 2,
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index.js"
-    }
+  "routes": [
+    { "src": "^/regras(/.*)?$", "status": 404 },
+    { "src": "^/scripts(/.*)?$", "status": 404 },
+    { "src": "^/.*\\.md$", "status": 404 },
+    { "src": "^/(package\\.json|package-lock\\.json|firestore\\.rules|firestore\\.indexes\\.json|firebase\\.json)$", "status": 404 },
+    { "src": "^/api/(.*)", "dest": "/api/index.js" },
+    { "handle": "filesystem" }
   ]
 }
