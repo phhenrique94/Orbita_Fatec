@@ -39,6 +39,10 @@ const diaDe = (s) => { const n = norm(s); return n.startsWith('SEG') ? 'segunda'
 const qtdPorCh = (ch) => ((Number(ch) || 0) >= 60 ? 12 : 6);
 const numTxt = (v) => (typeof v === 'number' ? String(Math.round(v)) : texto(v, 40));
 
+// 24/11/2026: disciplina (dia, horário, professor, unidades), calendário das UAs e datas das UAs são definidos
+// pelo EAD (Carlos) no Levantamento EaD. Na Aulas EAD ninguém altera isso: o T.I acompanha e marca as gravações.
+const DEFINIDO_PELO_EAD = 'Isso é definido pelo EAD no Levantamento EaD (Docência). Na Aulas EAD o T.I só acompanha.';
+const soLevantamento = (req, res) => { if (req.method === 'GET') return true; res.status(403).json({ error: DEFINIDO_PELO_EAD }); return false; };
 const soTi = (req, res) => {
     if (['adm_l1', 'adm_l2', 'ti'].includes(req.user.role) || req.method === 'GET') return true;
     res.status(403).json({ error: 'Só o T.I altera esta página.' }); return false;
@@ -342,7 +346,7 @@ function rotasDisciplinas(r, checkPerm, { podeGravar = () => true, registrar = n
     });
     
 }
-rotasDisciplinas(router, checkPermission, { podeGravar: soTi });
+rotasDisciplinas(router, checkPermission, { podeGravar: soLevantamento });
 
 // PATCH /disciplinas/:id/gravacao { item:'UA-01'|'REV-1', etapa:'gravou'|'baixou'|'youtube'|'ava', feito }
 // Marcar uma etapa marca as anteriores (não dá pra subir no YouTube o que não foi gravado); desmarcar
@@ -400,8 +404,9 @@ router.patch('/disciplinas/:id/item', verifyToken, checkPermission, async (req, 
             if (obs) atual.obs = { texto: obs, em: agora(), por: quemFez(req) }; else delete atual.obs;
         }
         if (b.data !== undefined) {
-            if (b.data && !/^\d{4}-\d{2}-\d{2}$/.test(b.data)) return res.status(400).json({ error: 'Data inválida.' });
-            if (b.data) atual.data = b.data; else delete atual.data;
+            // a data da UA sai do calendário do EAD: aqui só dá para LIMPAR um ajuste antigo
+            if (b.data) return res.status(403).json({ error: 'A data das UAs sai do calendário do EAD (Levantamento EaD). Aqui só dá para limpar um ajuste antigo.' });
+            delete atual.data;
         }
         if (b.naoGravou !== undefined) {
             const motivo = texto(b.naoGravou, 200);
@@ -419,6 +424,7 @@ router.patch('/disciplinas/:id/item', verifyToken, checkPermission, async (req, 
 // PUT /semestre/:semestre/calendario { inicio1, inicio2, semAula:['AAAA-MM-DD'] } — base das datas previstas
 router.put('/semestre/:semestre/calendario', verifyToken, checkPermission, async (req, res) => {
     try {
+        if (!soLevantamento(req, res)) return;
         if (!soTi(req, res)) return;
         const semestre = req.params.semestre;
         if (!SEMESTRE.test(semestre)) return res.status(400).json({ error: 'Semestre inválido.' });
@@ -515,9 +521,13 @@ router.get('/alteracoes', verifyToken, checkPermission, async (req, res) => {
     try {
         const dias = Math.min(Math.max(Number(req.query.dias) || 30, 1), 180);
         const desde = new Date(Date.now() - dias * 86400000).toISOString();
-        const snap = await db.collection(COL_ALT).where('em', '>=', desde).get();
+        const [snap, semSnap] = await Promise.all([db.collection(COL_ALT).where('em', '>=', desde).get(), db.collection(COL_SEM).get()]);
         const uid = req.user.uid;
-        const itens = snap.docs.map(d => { const x = d.data(); const { vistoPor, ...resto } = x; return { id: d.id, ...resto, visto: (vistoPor || []).includes(uid) || x.porUid === uid }; })
+        // 23/11/2026: mudança feita antes de as aulas do semestre começarem (início do 1º bimestre no calendário das UAs)
+        // não vira aviso pro T.I — o EAD ainda está montando o semestre. Sem calendário = ainda não começou.
+        const inicio = new Map(semSnap.docs.map(d => [d.id, ((d.data() || {}).calendario || {}).inicio1 || '']));
+        const antesDasAulas = (x) => { const i = inicio.get(x.semestre); return !i || String(x.em || '').slice(0, 10) < i; };
+        const itens = snap.docs.map(d => { const x = d.data(); const { vistoPor, ...resto } = x; return { id: d.id, ...resto, visto: (vistoPor || []).includes(uid) || x.porUid === uid || antesDasAulas(x) }; })
             .sort((a, b) => String(b.em).localeCompare(String(a.em)));
         res.json({ pendentes: itens.filter(i => !i.visto).length, itens: itens.slice(0, 300) });
     } catch (err) { res.status(500).json({ error: err.message }); }

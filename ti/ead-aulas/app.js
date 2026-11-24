@@ -102,7 +102,9 @@ function datasPrevistas(d) {
       });
     });
   }
-  d.itens.forEach(it => { const man = g[it.id]?.data; out[it.id] = man ? { data: man, manual: true } : auto[it.id] ? { data: auto[it.id], manual: false } : { data: '', manual: false }; });
+  // 24/11/2026: a data da UA sai SÓ do calendário do EAD (Levantamento EaD). Ajuste antigo feito aqui não vale: aparece para limpar.
+  // O EAD pode ajustar a data de uma UA (duas UAs no mesmo dia, reposição): datasUa, e essa vale.
+  d.itens.forEach(it => { const m0 = g[it.id]?.data; const ead = d.datasUa?.[it.id]?.data; out[it.id] = { data: ead || auto[it.id] || '', manual: !!ead, velha: m0 || '' }; });
   return out;
 }
 // situação da UA: gravada / não gravou (motivo) / atrasada (data passou) / hoje / prevista / sem data
@@ -170,20 +172,41 @@ const valorAlt = (campo, v) => (campo === 'dia' ? (DIA_ROTULO[v] || v) : String(
 async function carregarAvisosEad() {
   try { avisosEad = await apiFetch(`/${MODULO}/alteracoes?dias=30`); } catch (e) { avisosEad = null; }
   renderAvisosEad();
+  if (dados && aba === 'gravacoes') render();
 }
 function htmlMudancas(m) { return (m || []).map(x => `${esc(CAMPO_ALT[x.campo] || x.campo)}: <s>${esc(valorAlt(x.campo, x.de))}</s> → <b>${esc(valorAlt(x.campo, x.para))}</b>`).join(' · '); }
+const avisosPendentes = () => (avisosEad ? avisosEad.itens.filter(i => !i.visto) : []);
+// 23/11/2026: a disciplina que o EAD mudou fica em laranja na lista, até alguém do T.I marcar "Ciente"
+function mudancasDaDisc(id) {
+  const out = [];
+  avisosPendentes().forEach(a => {
+    if (a.discId === id) out.push({ altId: a.id, em: a.em, por: a.por, acao: a.acao, mudancas: a.mudancas || [] });
+    (a.itens || []).forEach(i => { if (i.discId === id) out.push({ altId: a.id, em: a.em, por: a.por, acao: i.acao, mudancas: i.mudancas || [] }); });
+  });
+  return out;
+}
+const camposMudados = (ms) => [...new Set(ms.flatMap(m => (m.mudancas || []).map(x => CAMPO_ALT[x.campo] || x.campo)))];
+async function marcarCiente(ids) {
+  if (!ids.length) return;
+  await apiFetch(`/${MODULO}/alteracoes/visto`, { method: 'POST', body: JSON.stringify({ ids }) });
+  const set = new Set(ids);
+  avisosEad.itens.forEach(i => { if (set.has(i.id)) i.visto = true; });
+  renderAvisosEad();
+}
 function renderAvisosEad() {
   const caixa = $('ea-avisos-ead');
   if (!caixa) return;
-  const pend = avisosEad ? avisosEad.itens.filter(i => !i.visto) : [];
+  const pend = avisosPendentes();
   if (!pend.length) { caixa.innerHTML = ''; return; }
   caixa.innerHTML = `<section class="ea-card ea-aviso-ead">
-    <div class="ea-card-topo"><h3>O EAD mudou ${pend.length} coisa(s) no Levantamento EaD</h3>
-      <div><button type="button" class="btn-secondary btn-mini" data-ea-avisos-abrir>${avisosAbertos ? 'Esconder' : 'Ver o que mudou'}</button> <button type="button" class="btn-primary btn-mini" data-ea-avisos-visto>Marcar como visto</button></div></div>
+    <div class="ea-card-topo"><h3>Mudanças do EAD · ${pend.length} para dar ciente</h3>
+      <div><button type="button" class="btn-secondary btn-mini" data-ea-avisos-abrir>${avisosAbertos ? 'Esconder' : 'Ver o que mudou'}</button> <button type="button" class="btn-primary btn-mini" data-ea-avisos-visto>Ciente de todas</button></div></div>
+    <p class="ea-sub" style="margin:0 .75rem .4rem">As disciplinas que o EAD mudou no Levantamento EaD ficam em laranja na lista. Abra a disciplina e clique em "Ciente".</p>
     ${avisosAbertos ? `<ul class="ea-aviso-lista">${pend.map(a => `<li><span class="ea-sub">${esc(quando(a.em))} · ${esc(a.por || '')}</span>
       ${esc(ACAO_ALT[a.acao] || a.acao)} <b>${esc(a.acao === 'importacao' || a.acao === 'calendario' ? (a.disciplina || '') : nomeBonito(a.disciplina || ''))}</b>${a.curso ? ` · ${esc(a.curso)}` : ''}
       ${a.mudancas && a.mudancas.length ? `<div class="ea-sub">${htmlMudancas(a.mudancas)}</div>` : ''}
-      ${a.itens ? `<div class="ea-sub">${a.itens.slice(0, 30).map(i => `${esc(nomeBonito(i.disciplina))} (${esc(i.curso)}): ${i.acao === 'nova' ? 'nova' : htmlMudancas(i.mudancas)}`).join('<br>')}${a.itens.length > 30 ? `<br>e mais ${a.itens.length - 30}` : ''}</div>` : ''}</li>`).join('')}</ul>` : ''}
+      ${a.itens ? `<div class="ea-sub">${a.itens.slice(0, 30).map(i => `${esc(nomeBonito(i.disciplina))} (${esc(i.curso)}): ${i.acao === 'nova' ? 'nova' : htmlMudancas(i.mudancas)}`).join('<br>')}${a.itens.length > 30 ? `<br>e mais ${a.itens.length - 30}` : ''}</div>` : ''}
+      <button type="button" class="ea-link" data-ea-ciente="${esc(a.id)}">Ciente</button></li>`).join('')}</ul>` : ''}
   </section>`;
 }
 function render() {
@@ -203,7 +226,7 @@ function renderGravacoes() {
   if (!ds.length) {
     tela().innerHTML = `<div class="ea-card"><b>Nenhuma disciplina EAD cadastrada em ${esc(dados.semestre)}.</b>
       <p class="ea-sub" style="font-size:.86rem">Importe a planilha "DISCIPLINAS EaD ${esc(dados.semestre)} LEVANTAMENTO" (no Google Planilhas: Arquivo › Fazer download › Microsoft Excel) ou cadastre uma por uma.</p>
-      ${podeEditar ? `<div class="ea-modal-acoes" style="justify-content:flex-start"><button type="button" class="btn-primary" data-ea-importar="disciplinas">Importar planilha de disciplinas</button><button type="button" class="btn-secondary" data-ea-nova-disc>Nova disciplina</button></div>` : ''}</div>`;
+      <p class="ea-sub">As disciplinas são cadastradas pelo EAD no Levantamento EaD (Docência).</p></div>`;
     return;
   }
   const cursos = [...new Map(ds.map(d => [d.cursoId, d.cursoNome])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
@@ -233,7 +256,7 @@ function renderGravacoes() {
       <label>UA prevista em<input type="date" class="ea-input" data-ea-f-data value="${esc(filtroData)}"></label>
       <label>Buscar<input class="ea-input ea-busca" data-ea-busca value="${esc(busca)}" placeholder="Disciplina ou professor"></label>
       ${filtroCurso || filtroDia || filtroProf || filtroData || busca || filtroSit !== 'todas' ? '<button type="button" class="btn-secondary" data-ea-limpar-filtros>Limpar filtros</button>' : ''}
-      <div class="ea-direita"><button type="button" class="btn-secondary" data-ea-calendario>${dados.calendario?.inicio1 ? 'Calendário das UAs' : 'Calendário das UAs (não definido)'}</button>${podeEditar ? `<button type="button" class="btn-secondary" data-ea-importar="disciplinas">Importar planilha</button><button type="button" class="btn-primary" data-ea-nova-disc>Nova disciplina</button>` : ''}</div>
+      <div class="ea-direita"><button type="button" class="btn-secondary" data-ea-calendario>${dados.calendario?.inicio1 ? 'Calendário das UAs' : 'Calendário das UAs (não definido)'}</button></div>
     </div>
     <div class="ea-pilulas" style="margin-bottom:1rem">
       ${[['todas', 'Todas', doFiltro.length], ['sem-prof', 'Sem professor', conta('sem-prof')], ['andamento', 'Gravando', conta('andamento')], ['publicar', 'Falta publicar', conta('publicar')], ['concluida', 'Tudo no AVA', conta('concluida')]]
@@ -242,8 +265,8 @@ function renderGravacoes() {
     <section class="ea-card ea-card-tabela">
       ${lista.length ? `<div class="ea-tabela-wrap"><table class="ea-tabela">
         <thead><tr><th>Disciplina</th><th>Professor</th><th>Dia e horário</th><th>Zoom<span class="ea-sub">e-mail · sala</span></th><th>Gravações</th></tr></thead>
-        <tbody>${lista.map(d => { const s = salaDoProf(d.professor); return `<tr class="ea-clicavel" data-ea-disc="${esc(d.id)}" tabindex="0">
-          <td><b>${esc(nomeBonito(d.nome))}</b><span class="ea-sub">${esc(d.cursoNome)} · ${esc(periodoTxt(d.periodo))}${d.ch ? ` · ${d.ch} h` : ''} · ${d.qtd || ''} UAs</span></td>
+        <tbody>${lista.map(d => { const s = salaDoProf(d.professor); const mud = mudancasDaDisc(d.id); return `<tr class="ea-clicavel${mud.length ? ' ea-mudou' : ''}" data-ea-disc="${esc(d.id)}" tabindex="0">
+          <td><b>${esc(nomeBonito(d.nome))}</b>${mud.length ? ` <span class="ea-pill ea-pill-mudou">EAD mudou${camposMudados(mud).length ? ': ' + esc(camposMudados(mud).join(', ')) : ''}</span>` : ''}<span class="ea-sub">${esc(d.cursoNome)} · ${esc(periodoTxt(d.periodo))}${d.ch ? ` · ${d.ch} h` : ''} · ${d.qtd || ''} UAs</span></td>
           <td>${d.professor ? esc(d.professor) : '<span class="ea-pill alerta">definir</span>'}</td>
           <td class="ea-nowrap">${d.dia ? esc(DIA_ROTULO[d.dia]) : '<span class="ea-sub">—</span>'}${d.horario ? `<span class="ea-sub">${esc(d.horario)}</span>` : ''}</td>
           <td class="ea-nowrap">${s ? `<span class="ea-zoom-cel"><b>${esc(s.conta)}</b><span>${esc(s.nome)}</span></span>` : d.professor ? '<span class="ea-pill alerta">sem sala</span>' : ''}</td>
@@ -298,8 +321,8 @@ function abrirDisciplina(id) {
       : (gi.obs ? esc(gi.obs.texto) : '');
     return `${sep}<tr class="${it.revisao ? 'ea-rev' : ''}">
       <td><b>${esc(it.rotulo)}</b><span class="ea-sub"><span class="ea-pill ${SIT[sit.id][0]}">${SIT[sit.id][1]}</span></span>${tipoHtml}</td>
-      <td class="ea-data-td">${podeEditar ? `<input type="date" class="ea-input ea-data" data-ea-data="${esc(it.id)}" value="${esc(dt.data)}" aria-label="Data prevista ${esc(it.rotulo)}">` : esc(dataBR(dt.data) || '—')}
-        <span class="ea-sub">${dt.manual ? 'data ajustada' : dt.data ? 'pelo calendário' : ''}${dt.manual && podeEditar ? ` · <button type="button" class="ea-link" data-ea-data-limpar="${esc(it.id)}">voltar ao calendário</button>` : ''}</span>
+      <td class="ea-data-td">${esc(dataBR(dt.data) || '—')}
+        <span class="ea-sub">${dt.velha ? `<span class="ea-alerta">ajuste antigo (${esc(dataBR(dt.velha))}) ignorado: vale o calendário do EAD</span>${podeEditar ? ` · <button type="button" class="ea-link" data-ea-data-limpar="${esc(it.id)}">limpar</button>` : ''}` : ''}${dt.manual ? 'data ajustada pelo EAD' : dt.data && !dt.velha ? 'pelo calendário' : ''}</span>
         ${juntas.length ? `<span class="ea-sub ea-alerta">mesma data de ${juntas.map(esc).join(', ')}</span>` : ''}</td>
       ${etapasHtml}
       <td>${gi.naoGravou ? `<span class="ea-alerta">${esc(gi.naoGravou.motivo)}</span>${podeEditar ? `<span class="ea-sub"><button type="button" class="ea-link" data-ea-nao-gravou-limpar="${esc(it.id)}">limpar</button></span>` : ''}`
@@ -309,16 +332,19 @@ function abrirDisciplina(id) {
   const semCal = !dados.calendario?.inicio1;
   abrirModal(nomeBonito(d.nome), `
     <p class="ea-sub" style="margin:-.4rem 0 .8rem;font-size:.84rem">${esc(d.cursoNome)} · ${esc(periodoTxt(d.periodo))}${d.ch ? ` · ${d.ch} h` : ''}${d.professor ? ` · Prof. ${esc(d.professor)}` : ''}</p>
+    ${(() => { const mud = mudancasDaDisc(d.id); return mud.length ? `<div class="ea-card ea-aviso-ead ea-aviso-disc"><b>O EAD mudou esta disciplina no Levantamento EaD</b>
+      <ul class="ea-aviso-lista">${mud.map(m => `<li><span class="ea-sub">${esc(quando(m.em))} · ${esc(m.por || '')}</span>${m.acao === 'nova' ? 'cadastrou a disciplina' : htmlMudancas(m.mudancas)}</li>`).join('')}</ul>
+      <div class="ea-modal-acoes" style="justify-content:flex-start;margin-top:.5rem"><button type="button" class="btn-primary btn-mini" data-ea-ciente-disc="${esc(d.id)}">Ciente</button></div></div>` : ''; })()}
     ${htmlZoomDestaque(s, d)}
-    <section><h3>Dados da disciplina</h3>${htmlFormDisc(d)}
-      ${podeEditar ? `<div class="ea-modal-acoes"><button type="button" class="btn-secondary ea-perigo" data-ea-excluir-disc="${esc(d.id)}">Excluir disciplina</button><button type="button" class="btn-primary" data-ea-salvar-disc="${esc(d.id)}">Salvar dados</button></div>` : ''}</section>
+    <section><h3>Dados da disciplina <span class="ea-sub" style="display:inline">· definidos pelo EAD no Levantamento EaD</span></h3>${htmlFormDisc(d)}</section>
     <section><h3>Gravações <span class="ea-sub" style="display:inline">· marcar uma etapa marca as anteriores; desmarcar desmarca as seguintes</span></h3>
-      ${semCal ? `<p class="ea-sub" style="margin:0 0 .5rem">Sem calendário das UAs neste semestre: as datas ficam em branco. Dá para digitar a data de cada UA aqui ou definir o calendário (botão "Calendário das UAs").</p>` : !d.dia ? '<p class="ea-sub" style="margin:0 0 .5rem">A disciplina está sem dia da semana: o calendário não consegue calcular as datas. Preencha o dia acima ou digite a data de cada UA.</p>' : ''}
+      ${semCal ? `<p class="ea-sub" style="margin:0 0 .5rem">Sem calendário das UAs neste semestre: as datas ficam em branco até o EAD definir o calendário no Levantamento EaD.</p>` : !d.dia ? '<p class="ea-sub" style="margin:0 0 .5rem">A disciplina está sem dia da semana: as datas aparecem quando o EAD definir o dia no Levantamento EaD.</p>' : ''}
       <div class="ea-tabela-wrap"><table class="ea-tabela ea-grav" data-ea-disc-grav="${esc(d.id)}">
         <thead><tr><th>Unidade</th><th>Data prevista</th>${dados.etapas.map(e => `<th class="ea-check-td">${ETAPA_ROTULO[e]}<span class="ea-sub">${ETAPA_QUEM[e]}</span></th>`).join('')}<th>Não gravou</th><th>Observação<span class="ea-sub">opcional</span></th></tr></thead>
         <tbody>${linhas}</tbody></table></div>
       <datalist id="ea-obs-sugestoes">${OBS_SUGESTOES.map(o => `<option value="${esc(o)}">`).join('')}</datalist>
       <p class="ea-sub" style="margin-top:.5rem">Observação: vale também para UA gravada (ex.: mais de uma UA no mesmo vídeo, sem slide, sem áudio). Salva ao sair do campo; apague o texto para limpar.</p></section>`);
+  $('ea-modal-corpo').querySelectorAll('.ea-form input, .ea-form select').forEach(i => { i.disabled = true; }); // definidos pelo EAD
 }
 
 // Destaque do Zoom (18/11/2026): e-mail (conta) e sala do professor em cartão próprio no topo da ficha
@@ -337,11 +363,11 @@ function abrirCalendario() {
   abrirModal(`Calendário das UAs · ${dados.semestre}`, `
     <p class="ea-sub" style="margin:-.3rem 0 .9rem;font-size:.85rem">Com o início de cada bimestre e o dia da semana da disciplina, a data prevista de cada UA sai sozinha: toda semana nas disciplinas de 12 UAs e a cada 15 dias nas de 6. Os dias sem aula são pulados. A data de uma UA ainda pode ser trocada na ficha da disciplina.</p>
     <div class="ea-form">
-      <label>Início do 1º bimestre<input type="date" id="ea-c-ini1" value="${esc(c.inicio1 || '')}" ${podeEditar ? '' : 'disabled'}></label>
-      <label>Início do 2º bimestre<input type="date" id="ea-c-ini2" value="${esc(c.inicio2 || '')}" ${podeEditar ? '' : 'disabled'}></label>
-      <label class="ea-largo">Dias sem aula (um por linha, dd/mm/aaaa)<textarea id="ea-c-sem" rows="5" ${podeEditar ? '' : 'disabled'} placeholder="21/04/2027&#10;01/05/2027">${esc((c.semAula || []).map(br).join('\n'))}</textarea></label>
+      <label>Início do 1º bimestre<input type="date" id="ea-c-ini1" value="${esc(c.inicio1 || '')}" disabled></label>
+      <label>Início do 2º bimestre<input type="date" id="ea-c-ini2" value="${esc(c.inicio2 || '')}" disabled></label>
+      <label class="ea-largo">Dias sem aula (um por linha, dd/mm/aaaa)<textarea id="ea-c-sem" rows="5" disabled placeholder="21/04/2027&#10;01/05/2027">${esc((c.semAula || []).map(br).join('\n'))}</textarea></label>
     </div>
-    ${podeEditar ? '<div class="ea-modal-acoes"><button type="button" class="btn-primary" data-ea-salvar-cal>Salvar calendário</button></div>' : ''}`);
+    <p class="ea-sub">O calendário é definido pelo EAD em Levantamento EaD › Cronograma › "Calendário e fechamento".</p>`);
 }
 
 function lerForm(novo) {
@@ -587,6 +613,11 @@ async function acao(e) {
     if (t.dataset.eaRelLimpar !== undefined) { relIni = relFim = relProf = relDisc = ''; relSoObs = false; return render(); }
     if (t.dataset.eaDia) { diaGrade = t.dataset.eaDia; return render(); }
     if (t.dataset.eaDisc && t.tagName === 'TR') return abrirDisciplina(t.dataset.eaDisc);
+    if (t.dataset.eaCienteDisc) {
+      t.disabled = true;
+      await marcarCiente([...new Set(mudancasDaDisc(t.dataset.eaCienteDisc).map(m => m.altId))]);
+      toast('Ciente.'); render(); return abrirDisciplina(t.dataset.eaCienteDisc);
+    }
     if (t.dataset.eaImportar) { $('ea-arquivo').dataset.tipo = t.dataset.eaImportar; $('ea-arquivo').value = ''; return $('ea-arquivo').click(); }
     if (t.dataset.eaConfirmarImport !== undefined) return confirmarImportacao(t);
     if (t.dataset.eaCopiarLink) { const s = salaPorId(t.dataset.eaCopiarLink); return s && copiar(s.link, `Link copiado: ${nomeSala(s)}`); }
@@ -690,13 +721,14 @@ async function mudanca(e) {
 function ligarEventos() {
   $('ea-avisos-ead').addEventListener('click', async (e) => {
     if (e.target.closest('[data-ea-avisos-abrir]')) { avisosAbertos = !avisosAbertos; return renderAvisosEad(); }
-    const b = e.target.closest('[data-ea-avisos-visto]');
+    const um = e.target.closest('[data-ea-ciente]');
+    const b = um || e.target.closest('[data-ea-avisos-visto]');
     if (!b) return;
     b.disabled = true;
     try {
-      await apiFetch(`/${MODULO}/alteracoes/visto`, { method: 'POST', body: JSON.stringify({ ids: avisosEad.itens.filter(i => !i.visto).map(i => i.id) }) });
-      avisosEad.itens.forEach(i => { i.visto = true; }); avisosAbertos = false; renderAvisosEad(); toast('Marcado como visto.');
-      try { localStorage.removeItem('orbita_ead_alt_cache'); } catch (err) {}
+      await marcarCiente(um ? [um.dataset.eaCiente] : avisosPendentes().map(i => i.id));
+      if (!um) avisosAbertos = false;
+      renderAvisosEad(); if (dados) render(); toast('Ciente.');
     } catch (err) { toast(err.message, 'erro'); b.disabled = false; }
   });
   $('ea-semestre').addEventListener('change', carregar);

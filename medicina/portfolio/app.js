@@ -7,6 +7,7 @@ import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/
 import { firebaseConfig } from "../../core/firebase-config.js";
 import { setupLayout, getCachedAuth, setCachedAuth, clearCachedAuth } from "../../core/layout.js";
 import { escapeHTML as esc } from "../../core/security.js";
+import { tutorialHtml } from "./tutorial.js?v=1";
 
 const M = window.PortfolioMatriz;
 const fbApp = initializeApp(firebaseConfig);
@@ -78,8 +79,34 @@ async function carregar() {
     el('pf-conteudo').innerHTML = `<div class="pf-vazio pf-erro">${esc(e.message)}</div>`;
     return;
   }
+  if (location.hash === '#ajuda') return renderAjuda();
   const m = /[#&]a=([\w-]+)/.exec(location.hash);
   if (m) return abrirAtividade(m[1]);
+  // primeira visita: abre o "Como usar" uma vez
+  let viu = true;
+  try { viu = localStorage.getItem('pf_tutorial_visto') === '1'; localStorage.setItem('pf_tutorial_visto', '1'); } catch (e) { /* sem storage */ }
+  if (!viu) return renderAjuda();
+  renderTurmas();
+}
+
+// ============================================================ como usar
+let voltarDaAjuda = null;
+function renderAjuda() {
+  history.replaceState(null, '', '#ajuda');
+  trilha([{ t: 'Turmas', ir: 'turmas' }, { t: 'Como usar' }]);
+  el('pf-conteudo').innerHTML = tutorialHtml(!!(dados && dados.editor)) +
+    `<div class="pf-barra pf-tut-fim"><span></span><button type="button" class="pf-btn pf-btn-pri" data-acao="sair-ajuda">Entendi, ir para as turmas</button></div>`;
+  window.scrollTo({ top: 0 });
+}
+async function abrirAjuda() {
+  if (!sairDaCorrecao()) return;
+  voltarDaAjuda = ativ ? ativ.atividade.id : null;
+  corr = null;
+  renderAjuda();
+}
+function sairAjuda() {
+  if (voltarDaAjuda) { const id = voltarDaAjuda; voltarDaAjuda = null; return abrirAtividade(id); }
+  history.replaceState(null, '', location.pathname);
   renderTurmas();
 }
 
@@ -91,7 +118,8 @@ function renderTurmas() {
       ${editor ? `Nenhuma turma configurada em ${esc(dados.semestre)}.<br><br>
         <button type="button" class="pf-btn pf-btn-pri" data-acao="copiar-semestre">Copiar turmas de outro semestre</button>
         <button type="button" class="pf-btn" data-acao="nova-turma">Configurar turma</button>`
-      : `Você ainda não está como professor corretor de nenhuma turma em ${esc(dados.semestre)}. Peça à coordenação de Medicina para incluir você.`}
+      : `Você ainda não está como professor corretor de nenhuma turma em ${esc(dados.semestre)}. Peça à coordenação de Medicina para incluir você.<br><br>
+        <button type="button" class="pf-btn" data-acao="ajuda">Como usar</button>`}
     </div>`;
     return;
   }
@@ -239,10 +267,13 @@ function renderAtividade() {
       <div>
         <h2>${esc(atividade.titulo)} <small>${esc(turmaRotulo(turma))}</small></h2>
         <p class="pf-meta">${c.total} entregas · ${c.finalizada} finalizadas · ${c.rascunho} em correção · ${c.pendente} pendentes</p>
+        ${atividade.ava ? `<p class="pf-meta">AVA: Tarefa <b>${esc(atividade.ava.tarefaNome)}</b> · ${esc(atividade.ava.cursoNome)}${ativ.editor ? ' · <button type="button" class="pf-link" data-acao="ava-ligar">trocar</button>' : ''}</p>` : ''}
         <div class="pf-progresso" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>
       </div>
       <div class="pf-acoes">
-        <button type="button" class="pf-btn pf-btn-pri" data-acao="importar">Importar ZIP do AVA</button>
+        ${ativ.editor && atividade.ava ? '<button type="button" class="pf-btn pf-btn-pri" data-acao="ava-buscar">Buscar entregas do AVA</button>' : ''}
+        ${ativ.editor && !atividade.ava ? '<button type="button" class="pf-btn pf-btn-pri" data-acao="ava-ligar">Ligar à Tarefa do AVA</button>' : ''}
+        <button type="button" class="pf-btn" data-acao="importar">Importar ZIP do AVA</button>
         ${ativ.editor ? '<button type="button" class="pf-btn pf-btn-perigo" data-acao="excluir-ativ">Excluir atividade</button>' : ''}
       </div>
     </section>
@@ -255,11 +286,13 @@ function renderAtividade() {
   if (!entregas.length) {
     el('pf-aba').innerHTML = `<div class="pf-vazio pf-passos">
       <h3>Como trazer as entregas do AVA</h3>
+      ${atividade.ava ? '<p><b>Esta atividade já está ligada à Tarefa do AVA:</b> clique em <b>Buscar entregas do AVA</b>. O jeito abaixo (ZIP) continua valendo.</p>' : (ativ.editor ? '<p><b>Mais fácil:</b> clique em <b>Ligar à Tarefa do AVA</b> e depois em <b>Buscar entregas do AVA</b>. Ou use o ZIP:</p>' : '')}
       <ol>
         <li>No AVA, abra a <b>Tarefa</b> do portfólio → <b>Ver todos os envios</b>.</li>
         <li>Em <b>Ação de avaliação</b>, escolha <b>Baixar todas as tarefas enviadas</b>. Vem um arquivo .zip.</li>
         <li>Aqui, clique em <b>Importar ZIP do AVA</b> e escolha esse arquivo. Os PDFs são lidos no seu computador.</li>
-      </ol></div>`;
+      </ol>
+      <button type="button" class="pf-btn pf-btn-peq" data-acao="ajuda">Ver o passo a passo completo</button></div>`;
     return;
   }
   renderAba();
@@ -376,6 +409,154 @@ async function importarZip(arquivo) {
   c2.innerHTML = `<b>${total - erros.length} de ${total} entregas importadas.</b> Os PDFs ficam abertos só neste navegador enquanto a página estiver aberta — se recarregar, importe o ZIP de novo para vê-los (as correções não se perdem).
     ${erros.length ? `<ul class="pf-erros">${erros.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${ignorados.length ? `<small>${ignorados.length} arquivo(s) fora do padrão do AVA foram ignorados.</small>` : ''}`;
+}
+
+// ============================================================ integração com o AVA (24/11/2026)
+// A atividade é ligada à Tarefa do AVA; "Buscar entregas do AVA" substitui o ZIP e "Lançar notas no AVA" substitui a
+// planilha offline. O token do AVA fica no servidor: os PDFs vêm pelo Órbita (/ava/arquivo).
+// Cursos de SCIC de 2026.2 no AVA (o "id=" do link da disciplina) — só para já vir preenchido; dá para trocar.
+const AVA_CURSO_PADRAO = { '2026.2__T1': 3645, '2026.2__T2': 3640, '2026.2__T3': 3632 };
+
+async function arquivoDoAva(caminho) {
+  let token = '';
+  if (currentUser && typeof currentUser.getIdToken === 'function') token = await currentUser.getIdToken();
+  else if (auth.currentUser) token = await auth.currentUser.getIdToken();
+  const r = await fetch(`${API_BASE}${BASE}/atividades/${encodeURIComponent(ativ.atividade.id)}/ava/arquivo?c=${encodeURIComponent(caminho)}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) { let m = `Erro ${r.status}`; try { m = (await r.json()).error || m; } catch (e) { /* sem corpo */ } throw new Error(m); }
+  return r.blob();
+}
+
+function dlgLigarAva() {
+  const { atividade, turma } = ativ;
+  const atual = atividade.ava || {};
+  const cursoIni = atual.cursoId || AVA_CURSO_PADRAO[turma.id] || '';
+  dialogo(`<form method="dialog" class="pf-form" id="pf-f-ava">
+    <h2>Ligar à Tarefa do AVA — ${esc(turmaRotulo(turma))}</h2>
+    <p class="pf-meta">Número do curso no AVA: abra a disciplina de SCIC no AVA e copie o número que vem depois de <b>id=</b> no endereço.</p>
+    <label>Número do curso no AVA<input name="curso" inputmode="numeric" required value="${esc(String(cursoIni))}"></label>
+    <div class="pf-dlg-acoes" style="justify-content:flex-start"><button type="button" class="pf-btn" data-ava-procurar>Procurar as Tarefas desse curso</button></div>
+    <div id="pf-ava-tarefas"></div>
+    <div class="pf-dlg-acoes"><button type="button" class="pf-btn" data-fechar>Cancelar</button><button class="pf-btn pf-btn-pri" id="pf-ava-ligar" disabled>Ligar</button></div>
+  </form>`, (d) => {
+    const caixa = d.querySelector('#pf-ava-tarefas');
+    const procurar = async () => {
+      caixa.innerHTML = '<p class="pf-meta">Procurando no AVA…</p>';
+      try {
+        const r = await api(`${BASE}/ava/tarefas?curso=${encodeURIComponent(d.querySelector('[name=curso]').value.trim())}`);
+        if (!r.tarefas.length) { caixa.innerHTML = '<p class="pf-aviso">Esse curso não tem Tarefas no AVA.</p>'; return; }
+        const pre = (atual.tarefaId && r.tarefas.find(t => t.id === atual.tarefaId)) || r.tarefas.find(t => /portf/i.test(t.nome)) || r.tarefas[0];
+        caixa.innerHTML = `<p class="pf-meta"><b>${esc(r.curso.nome)}</b></p>
+          <fieldset class="pf-ava-lista"><legend>Tarefa</legend>${r.tarefas.map(t => `<label class="pf-ava-op"><input type="radio" name="tarefa" value="${t.id}" ${t.id === pre.id ? 'checked' : ''}>
+            ${esc(t.nome)} <small>${t.prazo ? `entrega até ${new Date(t.prazo * 1000).toLocaleDateString('pt-BR')}` : 'sem prazo'} · vale ${t.notaMax}${t.anonimo ? ' · envio anônimo' : ''}</small></label>`).join('')}</fieldset>`;
+        d.querySelector('#pf-ava-ligar').disabled = false;
+      } catch (err) { caixa.innerHTML = `<p class="pf-aviso">${esc(err.message)}</p>`; }
+    };
+    d.querySelector('[data-ava-procurar]').addEventListener('click', procurar);
+    if (cursoIni) procurar();
+    d.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const tarefa = (d.querySelector('[name=tarefa]:checked') || {}).value;
+      if (!tarefa) return;
+      try {
+        const r = await post(`${BASE}/atividades/${encodeURIComponent(atividade.id)}/ava`, { cursoId: d.querySelector('[name=curso]').value.trim(), tarefaId: tarefa }, 'PUT');
+        ativ.atividade.ava = r.ava;
+        d.close();
+        toast(`Ligada à Tarefa "${r.ava.tarefaNome}" do AVA.`);
+        renderAtividade();
+      } catch (err) { toast(err.message, 'erro'); }
+    });
+  });
+}
+
+// mesma leitura do ZIP, mas os arquivos vêm do AVA pelo Órbita
+async function buscarEntregasAva() {
+  if (!window.pdfjsLib) { toast('A biblioteca de leitura de PDF ainda está carregando. Tente de novo em alguns segundos.', 'erro'); return; }
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const caixa = el('pf-import');
+  caixa.hidden = false;
+  const msg = (h) => { caixa.innerHTML = h; };
+  msg('Consultando os envios no AVA…');
+  let r;
+  try { r = await api(`${BASE}/atividades/${encodeURIComponent(ativ.atividade.id)}/ava/entregas`); }
+  catch (e) { msg(`<b>Não consegui consultar o AVA.</b> ${esc(e.message)}`); return; }
+  if (!r.itens.length) { msg(`<b>Nenhum envio na Tarefa "${esc(r.tarefa.tarefaNome)}" até agora</b> (${r.participantes} participantes).`); return; }
+  let feitos = 0;
+  const erros = [];
+  for (const it of r.itens) {
+    msg(`Lendo e enviando <b>${feitos + 1}</b> de <b>${r.itens.length}</b>: ${esc(it.nome)}…<div class="pf-progresso"><span style="width:${Math.round(feitos / r.itens.length * 100)}%"></span></div>`);
+    const textos = it.textoOnline ? [new DOMParser().parseFromString(it.textoOnline, 'text/html').body.innerText || ''] : [];
+    const arquivos = [], naoPdf = [], urls = [];
+    let paginas = 0;
+    for (const a of it.arquivos) {
+      arquivos.push(a.nome);
+      try {
+        const blob = await arquivoDoAva(a.caminho);
+        const ehPdf = /\.pdf$/i.test(a.nome) || /pdf/.test(a.tipo);
+        urls.push({ nome: a.nome, url: URL.createObjectURL(blob), naoPdf: !ehPdf });
+        if (ehPdf) { const t = await textoDoPdf(new Uint8Array(await blob.arrayBuffer())); textos.push(t.texto); paginas += t.paginas; }
+        else naoPdf.push(a.nome);
+      } catch (e) {
+        // pdf.js: "Invalid PDF structure" = arquivo cortado/corrompido já no AVA (ex.: envio interrompido)
+        const m = /invalid pdf|missing pdf|unexpected end/i.test(e.message) ? 'o PDF está incompleto ou corrompido no próprio AVA (o envio pode ter sido interrompido). Peça ao aluno para enviar de novo.' : e.message;
+        erros.push(`${it.nome}: ${a.nome} — ${m}`);
+      }
+    }
+    const texto = textos.join('\n\n');
+    try {
+      await post(`${BASE}/atividades/${encodeURIComponent(ativ.atividade.id)}/entregas`, {
+        participante: `u${it.userid}`, nome: it.nome, arquivos, naoPdf, paginas,
+        palavras: texto.replace(/\[\[p\.\d+\]\]/g, ' ').split(/\s+/).filter(Boolean).length, texto,
+        avaArquivos: it.arquivos.map(a => ({ nome: a.nome, caminho: a.caminho }))
+      });
+      pdfs.set(`${ativ.atividade.id}__u${it.userid}`, urls);
+    } catch (e) { erros.push(`${it.nome}: ${e.message}`); }
+    feitos++;
+  }
+  await abrirAtividade(ativ.atividade.id);
+  const c2 = el('pf-import');
+  c2.hidden = false;
+  c2.innerHTML = `<b>${r.itens.length - erros.length} de ${r.itens.length} envios trazidos do AVA</b> (${r.participantes} participantes na Tarefa). Pode buscar de novo quando chegarem outros envios: quem já foi corrigido não perde a correção.
+    ${erros.length ? `<ul class="pf-erros">${erros.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`;
+}
+
+// abre o PDF da entrega vinda do AVA (quando não está nesta sessão do navegador)
+async function carregarPdfsAva(entrega) {
+  const urls = [];
+  for (const a of entrega.avaArquivos || []) {
+    const blob = await arquivoDoAva(a.caminho);
+    urls.push({ nome: a.nome, url: URL.createObjectURL(blob), naoPdf: !/\.pdf$/i.test(a.nome) });
+  }
+  pdfs.set(chavePdf(entrega), urls);
+}
+
+async function dlgLancarNotasAva() {
+  let r;
+  try { r = await api(`${BASE}/atividades/${encodeURIComponent(ativ.atividade.id)}/ava/notas`); }
+  catch (e) { toast(e.message, 'erro'); return; }
+  if (!r.itens.length) { toast(r.semAluno ? `Nenhuma nota pronta: ${r.semAluno} correção(ões) finalizada(s) vieram do ZIP — use a planilha ou busque as entregas pelo AVA.` : 'Nenhuma correção finalizada para lançar.', 'erro'); return; }
+  dialogo(`<form method="dialog" class="pf-form">
+    <h2>Lançar notas no AVA</h2>
+    <p class="pf-meta">Tarefa <b>${esc(r.tarefa.tarefaNome)}</b> (${esc(r.tarefa.cursoNome)}), que vale <b>${r.tarefa.notaMax}</b>: a nota da matriz (0 a 10) vai × ${String(r.tarefa.notaMax / 10).replace('.', ',')}. Vai também o feedback de cada aluno. Confira antes de lançar.</p>
+    <div class="pf-tab-wrap" style="max-height:50vh;overflow:auto"><table class="pf-tab"><thead><tr><th></th><th>Estudante</th><th class="num">Nota</th><th class="num">No AVA</th><th>Situação</th></tr></thead>
+    <tbody>${r.itens.map(i => `<tr><td><input type="checkbox" data-lancar="${esc(i.id)}" ${i.jaLancada ? '' : 'checked'} aria-label="Lançar ${esc(i.nome)}"></td><td>${esc(i.nome)}</td><td class="num">${fmt(i.nota)}</td><td class="num"><b>${String(i.notaAva).replace('.', ',')}</b></td>
+      <td>${i.jaLancada ? `<small>já lançada em ${new Date(i.lancadaEm).toLocaleDateString('pt-BR')}</small>` : '<small>nova</small>'}</td></tr>`).join('')}</tbody></table></div>
+    ${r.semAluno ? `<p class="pf-aviso">${r.semAluno} correção(ões) finalizada(s) vieram do ZIP e não vão por aqui (use a planilha).</p>` : ''}
+    <div class="pf-dlg-acoes"><button type="button" class="pf-btn" data-fechar>Cancelar</button><button class="pf-btn pf-btn-pri">Lançar as marcadas no AVA</button></div>
+  </form>`, (d) => {
+    d.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ids = [...d.querySelectorAll('[data-lancar]:checked')].map(x => x.dataset.lancar);
+      if (!ids.length) { toast('Marque pelo menos um aluno.', 'erro'); return; }
+      const b = d.querySelector('.pf-btn-pri'); b.disabled = true; b.textContent = 'Lançando…';
+      try {
+        const res = await post(`${BASE}/atividades/${encodeURIComponent(ativ.atividade.id)}/ava/notas`, { ids, confirmar: true });
+        d.close();
+        toast(res.message, res.erros.length ? 'alerta' : 'ok');
+        if (res.erros.length) alert(`Não lançadas:\n${res.erros.join('\n')}`);
+        abrirAtividade(ativ.atividade.id);
+      } catch (err) { toast(err.message, 'erro'); b.disabled = false; b.textContent = 'Lançar as marcadas no AVA'; }
+    });
+  });
 }
 
 // ============================================================ correção
@@ -504,6 +685,83 @@ function renderCorrecao() {
   avisoSimilaridade();
 }
 
+// Modo leitura (24/11/2026): o PDF na tela inteira, uma página por vez, como apresentação.
+// Setas / PageUp / PageDown / espaço / clique na página mudam a página; "Ampliar" encaixa na largura (rola); Esc sai.
+async function modoLeitura(url) {
+  if (!window.pdfjsLib) { toast('A biblioteca de leitura de PDF ainda está carregando. Tente de novo em alguns segundos.', 'erro'); return; }
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  let doc;
+  try { doc = await window.pdfjsLib.getDocument(url).promise; } catch (e) { toast(`Não consegui abrir o PDF: ${e.message}`, 'erro'); return; }
+  const ov = document.createElement('div');
+  ov.className = 'pf-slide';
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-label', 'Leitura do portfólio em tela cheia');
+  ov.tabIndex = -1;
+  ov.innerHTML = `<div class="pf-slide-palco"><canvas title="Clique para a próxima página"></canvas></div>
+    <div class="pf-slide-barra">
+      <button type="button" data-s="ant" aria-label="Página anterior">‹ Anterior</button>
+      <span data-s="num"></span>
+      <button type="button" data-s="prox" aria-label="Próxima página">Próxima ›</button>
+      <button type="button" data-s="zoom">Ampliar</button>
+      <button type="button" data-s="sair">Sair (Esc)</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const palco = ov.querySelector('.pf-slide-palco'), canvas = ov.querySelector('canvas'), ctx = canvas.getContext('2d');
+  let n = 1, largura = false, tarefa = null, fechado = false;
+  const desenha = async () => {
+    const pag = await doc.getPage(n);
+    const v1 = pag.getViewport({ scale: 1 });
+    const w = palco.clientWidth - 24, h = palco.clientHeight - 24;
+    const escala = largura ? w / v1.width : Math.min(w / v1.width, h / v1.height);
+    const dpr = window.devicePixelRatio || 1;
+    const vp = pag.getViewport({ scale: escala * dpr });
+    if (tarefa) tarefa.cancel();
+    canvas.width = vp.width; canvas.height = vp.height;
+    canvas.style.width = `${Math.floor(vp.width / dpr)}px`; canvas.style.height = `${Math.floor(vp.height / dpr)}px`;
+    tarefa = pag.render({ canvasContext: ctx, viewport: vp });
+    try { await tarefa.promise; } catch (e) { /* trocou de página no meio */ }
+    ov.querySelector('[data-s=num]').textContent = `Página ${n} de ${doc.numPages}`;
+    ov.querySelector('[data-s=ant]').disabled = n <= 1;
+    ov.querySelector('[data-s=prox]').disabled = n >= doc.numPages;
+    ov.querySelector('[data-s=zoom]').textContent = largura ? 'Página inteira' : 'Ampliar';
+    palco.scrollTop = 0;
+  };
+  const vai = (d) => { const m = Math.min(doc.numPages, Math.max(1, n + d)); if (m !== n) { n = m; desenha(); } };
+  const fecha = () => {
+    if (fechado) return;
+    fechado = true;
+    document.removeEventListener('keydown', tecla, true);
+    document.removeEventListener('fullscreenchange', saiuTela);
+    window.removeEventListener('resize', desenha);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    ov.remove();
+    doc.destroy();
+  };
+  const tecla = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); fecha(); }
+    else if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key) && !(largura && e.key === 'ArrowDown')) { e.preventDefault(); vai(1); }
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key) && !(largura && e.key === 'ArrowUp')) { e.preventDefault(); vai(-1); }
+    else return;
+    e.stopPropagation();
+  };
+  const saiuTela = () => { if (!document.fullscreenElement) fecha(); };
+  document.addEventListener('keydown', tecla, true);
+  window.addEventListener('resize', desenha);
+  canvas.addEventListener('click', () => vai(1));
+  ov.querySelector('.pf-slide-barra').addEventListener('click', (e) => {
+    const s = (e.target.closest('[data-s]') || {}).dataset;
+    if (!s) return;
+    if (s.s === 'ant') vai(-1);
+    else if (s.s === 'prox') vai(1);
+    else if (s.s === 'zoom') { largura = !largura; desenha(); }
+    else if (s.s === 'sair') fecha();
+  });
+  ov.focus();
+  desenha();
+  // tela cheia do navegador quando der; se não der, fica a sobreposição do tamanho da janela
+  if (ov.requestFullscreen) ov.requestFullscreen().then(() => { if (!fechado) document.addEventListener('fullscreenchange', saiuTela); }).catch(() => {});
+}
+
 function renderLeitor() {
   const box = el('pf-leitor');
   if (!box || !corr) return;
@@ -512,15 +770,17 @@ function renderLeitor() {
   box.dataset.modo = modo;
   const alterna = `<div class="pf-leitor-barra">
     <div class="pf-abas pf-abas-peq">
-      <button type="button" class="pf-aba ${modo === 'pdf' ? 'ativa' : ''}" data-leitor="pdf" ${arqs.length ? '' : 'disabled title="Importe o ZIP nesta sessão para ver o PDF"'}>PDF</button>
+      <button type="button" class="pf-aba ${modo === 'pdf' ? 'ativa' : ''}" data-leitor="pdf" ${arqs.length ? '' : 'disabled title="Abra o PDF do AVA ou importe o ZIP para ver o PDF"'}>PDF</button>
       <button type="button" class="pf-aba ${modo === 'texto' ? 'ativa' : ''}" data-leitor="texto">Texto extraído</button>
     </div>
-    ${!arqs.length ? '<button type="button" class="pf-btn pf-btn-peq" data-acao="importar">Carregar ZIP para ver o PDF</button>' : ''}
+    ${modo === 'pdf' && arqs.some(a => !a.naoPdf) ? '<button type="button" class="pf-btn pf-btn-pri pf-btn-peq" data-acao="leitura" title="Uma página por vez na tela inteira. Setas mudam a página, Esc sai.">Ler em tela cheia</button>' : ''}
+    ${!arqs.length ? ((corr.entrega.avaArquivos || []).length ? '<button type="button" class="pf-btn pf-btn-peq" data-acao="ava-pdf">Abrir o PDF do AVA</button>' : '<button type="button" class="pf-btn pf-btn-peq" data-acao="importar">Carregar ZIP para ver o PDF</button>') : ''}
   </div>`;
   if (modo === 'pdf' && arqs.length) {
     box.innerHTML = alterna + arqs.map(a => a.naoPdf
       ? `<p class="pf-aviso">Arquivo não PDF: <a href="${a.url}" download="${esc(a.nome)}">${esc(a.nome)}</a> (baixe para abrir).</p>`
-      : `<iframe class="pf-pdf" src="${a.url}" title="${esc(a.nome)}"></iframe>`).join('');
+      // sem a barra de miniaturas do leitor do navegador e com a página na largura do quadro (24/11/2026)
+      : `<iframe class="pf-pdf" src="${a.url}#pagemode=none&navpanes=0&view=FitH" title="${esc(a.nome)}"></iframe>`).join('');
     return;
   }
   if (corr.texto == null) { box.innerHTML = alterna + '<div class="pf-vazio">Carregando o texto…</div>'; return; }
@@ -648,7 +908,8 @@ async function renderResumo() {
       <div class="pf-acoes">
         <button type="button" class="pf-btn" data-acao="imprimir">Imprimir relatório da turma</button>
         <button type="button" class="pf-btn" data-acao="csv">Baixar planilha (Excel)</button>
-        <button type="button" class="pf-btn pf-btn-pri" data-acao="planilha-ava">Preencher planilha de avaliação do AVA</button>
+        ${ativ.editor && ativ.atividade.ava ? '<button type="button" class="pf-btn pf-btn-pri" data-acao="ava-notas">Lançar notas no AVA</button>' : ''}
+        <button type="button" class="pf-btn ${ativ.atividade.ava ? '' : 'pf-btn-pri'}" data-acao="planilha-ava">Preencher planilha de avaliação do AVA</button>
       </div>
     </div>
     <details class="pf-passos-ava"><summary>Como devolver as notas ao AVA</summary><ol>
@@ -777,6 +1038,7 @@ async function imprimirRelatorio() {
 function ligarEventos() {
   el('pf-semestre').addEventListener('change', () => { if (!sairDaCorrecao()) return; corr = null; history.replaceState(null, '', location.pathname); carregar(); });
   el('pf-trilha').addEventListener('click', (e) => { const b = e.target.closest('[data-ir]'); if (b) irPara(b.dataset.ir); });
+  el('pf-ajuda').addEventListener('click', abrirAjuda);
   el('pf-zip').addEventListener('change', async (e) => {
     const f = e.target.files[0]; e.target.value = '';
     if (!f) return;
@@ -793,6 +1055,8 @@ function ligarEventos() {
   conteudo.addEventListener('click', async (e) => {
     const aba = e.target.closest('[data-aba]');
     if (aba) { abaAtiv = aba.dataset.aba; renderAtividade(); return; }
+    const tut = e.target.closest('[data-tut]');
+    if (tut) { const alvo = el(tut.dataset.tut); if (alvo) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     const lt = e.target.closest('[data-leitor]');
     if (lt && !lt.disabled) { el('pf-leitor').dataset.modo = lt.dataset.leitor; renderLeitor(); return; }
     const b = e.target.closest('[data-acao]');
@@ -804,6 +1068,15 @@ function ligarEventos() {
     else if (a === 'copiar-semestre') dlgCopiarSemestre();
     else if (a === 'abrir-ativ') { abaAtiv = 'entregas'; abrirAtividade(b.dataset.id); }
     else if (a === 'importar') el('pf-zip').click();
+    else if (a === 'ava-ligar') dlgLigarAva();
+    else if (a === 'ava-buscar') { b.disabled = true; try { await buscarEntregasAva(); } finally { b.disabled = false; } }
+    else if (a === 'ava-notas') dlgLancarNotasAva();
+    else if (a === 'leitura') { const pdf = (pdfs.get(chavePdf(corr.entrega)) || []).find(x => !x.naoPdf); if (pdf) modoLeitura(pdf.url); }
+    else if (a === 'ava-pdf') {
+      b.disabled = true; b.textContent = 'Abrindo…';
+      try { await carregarPdfsAva(corr.entrega); el('pf-leitor').dataset.modo = 'pdf'; renderLeitor(); }
+      catch (err) { toast(err.message, 'erro'); b.disabled = false; b.textContent = 'Abrir o PDF do AVA'; }
+    }
     else if (a === 'excluir-ativ') {
       if (!confirm(`Excluir "${ativ.atividade.titulo}" e TODAS as ${ativ.entregas.length} correções dela? Não dá para desfazer.`)) return;
       try { await api(`${BASE}/atividades/${encodeURIComponent(ativ.atividade.id)}`, { method: 'DELETE' }); toast('Atividade excluída.'); history.replaceState(null, '', location.pathname); carregar(); }
@@ -824,6 +1097,8 @@ function ligarEventos() {
       const alvo = ativ.entregas[i + (a === 'proximo' ? 1 : -1)];
       if (alvo) abrirCorrecao(alvo.id);
     }
+    else if (a === 'ajuda') abrirAjuda();
+    else if (a === 'sair-ajuda') sairAjuda();
     else if (a === 'csv') baixarCsvResumo();
     else if (a === 'planilha-ava') el('pf-planilha').click();
     else if (a === 'imprimir') imprimirRelatorio();
